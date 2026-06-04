@@ -150,14 +150,28 @@ async function handleStrayLockTab(tab) {
     return;
   }
 
-  if (tab.id !== session.lockTabId) {
-    try {
-      await chrome.tabs.remove(tab.id);
-    } catch {
-      /* ignore */
+  // Lock UI still starting — never delete the lock tab (was closing the whole browser).
+  if (preparingLock || !session.lockReady) {
+    const popup = await findLockPopup();
+    if (popup?.tabId === tab.id) return;
+    if (popup) {
+      try {
+        await chrome.tabs.remove(tab.id);
+      } catch {
+        /* ignore */
+      }
     }
-    scheduleEnforce();
+    return;
   }
+
+  if (session.lockTabId != null && tab.id === session.lockTabId) return;
+
+  try {
+    await chrome.tabs.remove(tab.id);
+  } catch {
+    /* ignore */
+  }
+  scheduleEnforce();
 }
 
 async function closeLockPopupSafely(session) {
@@ -784,7 +798,11 @@ chrome.windows.onRemoved.addListener((windowId) => {
     if (!state.isLocked) return;
 
     const session = await getSession();
-    if (windowId === session.lockWindowId) {
+    if (
+      session.lockReady &&
+      windowId === session.lockWindowId &&
+      session.lockTabId != null
+    ) {
       await closeBrowserOnLockDismiss();
     }
   }, 100);
@@ -798,7 +816,11 @@ chrome.tabs.onRemoved.addListener((tabId) => {
     if (!state.isLocked) return;
 
     const session = await getSession();
-    if (tabId === session.lockTabId) {
+    if (
+      session.lockReady &&
+      tabId === session.lockTabId &&
+      session.lockWindowId != null
+    ) {
       await closeBrowserOnLockDismiss();
     }
   }, 100);
