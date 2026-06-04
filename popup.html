@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Lock</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header class="header">
+      <span class="logo" aria-hidden="true">🔒</span>
+      <h1>Browser Lock</h1>
+    </header>
+    <p id="status" class="status">Loading…</p>
+
+    <div id="unlocked-panel">
+      <button type="button" id="lock-btn" class="btn danger">Lock browser</button>
+    </div>
+
+    <div id="locked-panel" hidden>
+      <form id="unlock-form">
+        <input
+          type="password"
+          id="popup-pin"
+          inputmode="numeric"
+          maxlength="8"
+          placeholder="PIN"
+          autocomplete="off"
+          aria-label="PIN"
+        />
+        <p id="popup-error" class="popup-error" hidden>Incorrect PIN</p>
+        <button type="submit" class="btn primary">Unlock</button>
+      </form>
+      <button type="button" id="focus-lock-btn" class="btn linkish">Show lock screen</button>
+    </div>
+
+    <a href="#" id="settings-link" class="link">Settings</a>
+    <script src="popup.js"></script>
+  </body>
+</html>

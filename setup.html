@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Lock — Setup</title>
+    <link rel="stylesheet" href="setup.css" />
+  </head>
+  <body>
+    <main class="wrap">
+      <header>
+        <span class="logo" aria-hidden="true">🔒</span>
+        <h1>Secure Browser Lock</h1>
+        <p class="lead">Set a PIN to lock all tabs. Data stays on this device only.</p>
+      </header>
+
+      <section class="card" id="pin-section">
+        <h2>PIN</h2>
+        <p class="hint">Use 4–8 digits. Avoid birthdays or 1234.</p>
+        <label>
+          <span>New PIN</span>
+          <input type="password" id="pin" inputmode="numeric" maxlength="8" autocomplete="new-password" />
+        </label>
+        <label>
+          <span>Confirm PIN</span>
+          <input type="password" id="pin-confirm" inputmode="numeric" maxlength="8" autocomplete="new-password" />
+        </label>
+        <p class="error" id="pin-error" hidden></p>
+        <button type="button" id="save-pin" class="btn primary">Save PIN</button>
+      </section>
+
+      <section class="card">
+        <h2>Behavior</h2>
+        <label class="check">
+          <input type="checkbox" id="auto-startup" checked />
+          <span>Auto-lock when browser starts</span>
+        </label>
+        <label>
+          <span>Auto-lock after idle (minutes, 0 = off)</span>
+          <input type="number" id="idle-minutes" min="0" max="120" value="5" />
+        </label>
+        <button type="button" id="save-settings" class="btn secondary">Save settings</button>
+        <p class="msg" id="settings-msg" hidden>Saved.</p>
+      </section>
+
+      <section class="card limits">
+        <h2>What this can and cannot do</h2>
+        <ul>
+          <li><strong>Can:</strong> one small Brave window, hidden tabs, extra windows closed until PIN.</li>
+          <li><strong>Cannot:</strong> block a different browser (Firefox, Edge) or a second profile — use OS login + disk encryption for that.</li>
+          <li><strong>Lock screen:</strong> one browser window (same taskbar icon). Small PIN box; other tabs hidden. Works in Brave, Edge, and Chrome.</li>
+          <li><strong>Cannot:</strong> block DevTools from Brave’s ⋮ menu — use a standard user account for real protection.</li>
+        </ul>
+      </section>
+
+      <p class="footer">
+        Sample v0.3 — privacy deterrent. Pair with Windows account password for shared PCs.
+      </p>
+    </main>
+    <script src="setup.js"></script>
+  </body>
+</html>

@@ -1,0 +1,91 @@
+#secure-browser-lock-root {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483646 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: linear-gradient(145deg, #0f172a 0%, #1e293b 50%, #0f172a 100%) !important;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
+#secure-browser-lock-root * {
+  box-sizing: border-box !important;
+}
+
+#secure-browser-lock-root .sbl-panel {
+  width: min(360px, 92vw) !important;
+  padding: 2rem 1.75rem !important;
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 16px !important;
+  text-align: center !important;
+  backdrop-filter: blur(12px) !important;
+}
+
+#secure-browser-lock-root .sbl-icon {
+  font-size: 2.5rem !important;
+  margin-bottom: 0.5rem !important;
+}
+
+#secure-browser-lock-root .sbl-title {
+  margin: 0 0 0.35rem !important;
+  font-size: 1.35rem !important;
+  font-weight: 600 !important;
+  color: #f8fafc !important;
+}
+
+#secure-browser-lock-root .sbl-subtitle {
+  margin: 0 0 1.25rem !important;
+  font-size: 0.9rem !important;
+  color: #94a3b8 !important;
+}
+
+#secure-browser-lock-root .sbl-form {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 0.75rem !important;
+}
+
+#secure-browser-lock-root .sbl-input {
+  width: 100% !important;
+  padding: 0.85rem 1rem !important;
+  font-size: 1.25rem !important;
+  letter-spacing: 0.2em !important;
+  text-align: center !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  border-radius: 10px !important;
+  background: rgba(15, 23, 42, 0.8) !important;
+  color: #f8fafc !important;
+  outline: none !important;
+}
+
+#secure-browser-lock-root .sbl-input:focus {
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.25) !important;
+}
+
+#secure-browser-lock-root .sbl-error {
+  margin: 0 !important;
+  font-size: 0.85rem !important;
+  color: #f87171 !important;
+}
+
+#secure-browser-lock-root .sbl-btn {
+  width: 100% !important;
+  padding: 0.85rem !important;
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  border: none !important;
+  border-radius: 10px !important;
+  background: #0ea5e9 !important;
+  color: #fff !important;
+  cursor: pointer !important;
+}
+
+#secure-browser-lock-root .sbl-btn:hover {
+  background: #0284c7 !important;
+}
