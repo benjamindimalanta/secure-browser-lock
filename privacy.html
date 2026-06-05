@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Browser Secure — Privacy Policy</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 720px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        line-height: 1.6;
+        color: #1e293b;
+      }
+      h1 { font-size: 1.5rem; }
+      h2 { font-size: 1.1rem; margin-top: 1.5rem; }
+    </style>
+  </head>
+  <body>
+    <h1>Browser Secure — Privacy Policy</h1>
+    <p><strong>Last updated:</strong> June 2026</p>
+
+    <h2>Single purpose</h2>
+    <p>
+      Browser Secure has one purpose: let you lock your browser with a PIN so other people
+      cannot see or use your tabs until you unlock it.
+    </p>
+
+    <h2>Data we collect</h2>
+    <p>
+      <strong>We do not collect, transmit, or sell your personal data.</strong>
+      Everything stays on your device inside Chrome/Brave/Edge local extension storage.
+    </p>
+    <ul>
+      <li><strong>PIN:</strong> Stored only as a salted cryptographic hash (PBKDF2). Your PIN is never sent to any server.</li>
+      <li><strong>Settings:</strong> Auto-lock preferences and lock state are saved locally.</li>
+      <li><strong>Browsing:</strong> We do not log websites you visit for analytics or advertising.</li>
+    </ul>
+
+    <h2>Permissions (why they are needed)</h2>
+    <ul>
+      <li><strong>storage</strong> — Save your PIN hash and settings on your device.</li>
+      <li><strong>tabs / windows / tabGroups</strong> — Hide tabs and show the lock screen while locked.</li>
+      <li><strong>alarms</strong> — Idle auto-lock timer.</li>
+      <li><strong>history / webNavigation</strong> — Remove extension lock pages from browser history only.</li>
+      <li><strong>system.display</strong> — Center the lock window on your screen.</li>
+    </ul>
+
+    <h2>Third parties</h2>
+    <p>No third-party analytics, ads, or remote code are used.</p>
+
+    <h2>Contact</h2>
+    <p>
+      Project repository:
+      <a href="https://github.com/benjamindimalanta/secure-browser-lock">github.com/benjamindimalanta/secure-browser-lock</a>
+    </p>
+  </body>
+</html>

@@ -1,8 +1,10 @@
 {
   "manifest_version": 3,
-  "name": "Secure Browser Lock",
-  "version": "0.7.3",
-  "description": "Lock Chrome/Edge/Brave with a PIN. Popup lock, hidden tabs, no history entry.",
+  "name": "Browser Secure",
+  "short_name": "BrowserSec",
+  "version": "1.0.0",
+  "description": "PIN-lock your browser on startup, idle, or demand. Hides tabs until unlock. Data stays on your device.",
+  "homepage_url": "https://github.com/benjamindimalanta/secure-browser-lock",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'self';"
   },
@@ -10,7 +12,6 @@
   "permissions": [
     "storage",
     "tabs",
-    "scripting",
     "alarms",
     "windows",
     "tabGroups",
@@ -18,12 +19,11 @@
     "history",
     "webNavigation"
   ],
-  "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Browser Lock",
+    "default_title": "Browser Secure",
     "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
@@ -39,7 +39,7 @@
   "options_page": "setup.html",
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["http://*/*", "https://*/*", "file://*/*"],
       "js": ["content/lock-overlay.js"],
       "css": ["content/lock-overlay.css"],
       "run_at": "document_idle"

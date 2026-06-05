@@ -1,6 +1,6 @@
-# Secure Browser Lock (sample)
+# Browser Secure
 
-Chrome extension sample similar to “Browser Lock” — PIN-protects your browsing session with a full-screen overlay on every tab.
+Chrome/Brave/Edge extension (Manifest V3) — PIN-lock your browser on startup, idle, or demand. Hides tabs until you unlock.
 
 ## Quick test
 
@@ -9,7 +9,7 @@ Chrome extension sample similar to “Browser Lock” — PIN-protects your brow
 3. Click **Load unpacked**
 4. Choose this folder: `d:\secure\browser-lock`
 5. The **Setup** page opens — set a 4–8 digit PIN and save
-6. Click the extension icon → **Lock browser**
+6. Click the **Browser Secure** toolbar icon → **Lock browser**
 7. A **small popup** opens for your PIN (no tab bar in the popup)
 8. Enter your PIN to unlock — Brave and tabs come back
 9. Optional: **Auto-lock on startup**; enable **Allow in incognito** on the extension card

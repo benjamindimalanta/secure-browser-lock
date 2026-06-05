@@ -4,7 +4,7 @@ set EXT_ID=fcodilfeiffldliajnimedailcppamap
 set STORAGE=%LOCALAPPDATA%\BraveSoftware\Brave-Browser\User Data\Default\Local Extension Settings\%EXT_ID%
 
 echo.
-echo Secure Browser Lock - reset saved lock state
+echo Browser Secure - reset saved lock state
 echo =============================================
 echo.
 echo This deletes PIN/lock settings saved by the extension.
@@ -30,7 +30,7 @@ if errorlevel 1 start "" "%LocalAppData%\BraveSoftware\Brave-Browser\Application
 
 echo.
 echo 1. Go to brave://extensions
-echo 2. Reload "Secure Browser Lock"
+echo 2. Reload "Browser Secure"
 echo 3. Close Brave fully, then open Brave normally
 echo.
 pause

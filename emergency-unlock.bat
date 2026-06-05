@@ -6,7 +6,7 @@ if errorlevel 1 (
   start "" "%LocalAppData%\BraveSoftware\Brave-Browser\Application\brave.exe" --disable-extensions
 )
 echo.
-echo In Brave: go to brave://extensions and Reload or Remove "Secure Browser Lock".
+echo In Brave: go to brave://extensions and Reload or Remove "Browser Secure".
 echo.
 echo If Brave still closes on open, also run: reset-brave-lock-state.bat
 pause
