@@ -25,6 +25,8 @@ const DEFAULTS = {
   isConfigured: false,
   autoLockOnStartup: true,
   idleLockMinutes: 5,
+  /** Set when all windows close — lock again on next open (Brave background process). */
+  lockOnNextOpen: false,
 };
 
 const SESSION_DEFAULTS = {
@@ -55,10 +57,12 @@ let browserLaunchTime = Date.now();
 const ENFORCE_DEBOUNCE_MS = 1000;
 /** Wait for Brave/Edge session restore before minimize + popup (avoids visible main window). */
 const SESSION_RESTORE_WAIT_MS = 1800;
-/** Never quit the browser during launch — popup teardown used to fire false quits. */
-const STARTUP_GRACE_MS = 45000;
+/** Idle-alarm / enforce guard during cold start only. */
+const STARTUP_GRACE_MS = 15000;
 /** Lock popup must be visible this long before X counts as user quit. */
-const LOCK_POPUP_MIN_AGE_MS = 4000;
+const LOCK_POPUP_MIN_AGE_MS = 1200;
+/** Ignore X while the extension is closing/recreating the lock window itself. */
+const LOCK_QUIT_SUPPRESS_MS = 3500;
 const STASH_MINIMIZE_MAX_ATTEMPTS = 8;
 
 function sleep(ms) {
@@ -125,10 +129,45 @@ async function validateAndRepairLockSession() {
   }
 }
 
+/** Remember to lock when Brave reopens (background process keeps running). */
+async function noteAllWindowsClosed() {
+  const state = await getState();
+  if (!state.isConfigured || !state.autoLockOnStartup || state.isLocked) return;
+
+  const windows = await chrome.windows.getAll({
+    windowTypes: ["normal", "popup"],
+  });
+  if (windows.length === 0) {
+    await setState({ lockOnNextOpen: true });
+  }
+}
+
+/** Lock when a new window opens after the user fully closed Brave. */
+async function maybeAutoLockOnWindowOpen() {
+  if (preparingLock || startupLockFlowRunning) return;
+
+  const state = await getState();
+  if (
+    !state.isConfigured ||
+    !state.autoLockOnStartup ||
+    state.isLocked ||
+    !state.lockOnNextOpen
+  ) {
+    return;
+  }
+
+  await setState({ lockOnNextOpen: false });
+  const res = await lockBrowser();
+  if (res.ok) {
+    startEnforceAlarm();
+  } else {
+    await emergencyUnlockBrowser();
+  }
+}
+
 /** Service worker start: never trap the user without a visible PIN screen. */
 async function bootstrapServiceWorker() {
   browserLaunchTime = Date.now();
-  suppressLockQuitUntil = Date.now() + STARTUP_GRACE_MS;
   chrome.alarms.clear("idle-lock");
 
   await purgeExtensionPagesFromHistory();
@@ -137,8 +176,11 @@ async function bootstrapServiceWorker() {
   const state = await getState();
   if (!state.isConfigured) return;
 
-  if (state.isLocked) {
-    if (!(await findLockPopup())) {
+  const shouldAutoLock =
+    state.autoLockOnStartup && (!state.isLocked || state.lockOnNextOpen);
+
+  if (state.isLocked || shouldAutoLock) {
+    if (state.isLocked && !(await findLockPopup())) {
       await setSession({
         lockReady: false,
         lockWindowId: null,
@@ -258,7 +300,7 @@ async function handleStrayLockTab(tab) {
 }
 
 async function closeLockPopupSafely(session) {
-  suppressLockQuitUntil = Date.now() + 5000;
+  suppressLockQuitUntil = Date.now() + LOCK_QUIT_SUPPRESS_MS;
   if (session.lockWindowId != null) {
     try {
       await chrome.windows.remove(session.lockWindowId);
@@ -471,7 +513,7 @@ async function ensureLockPopup() {
     return existing.popupId;
   }
 
-  suppressLockQuitUntil = Date.now() + 5000;
+  suppressLockQuitUntil = Date.now() + LOCK_QUIT_SUPPRESS_MS;
   const bounds = await getCenteredBounds();
   const popup = await chrome.windows.create({
     url: LOCK_PAGE(),
@@ -538,7 +580,7 @@ async function showAllHiddenTabs() {
 }
 
 async function closeOtherWindowsExcept(keepIds) {
-  suppressLockQuitUntil = Date.now() + 5000;
+  suppressLockQuitUntil = Date.now() + LOCK_QUIT_SUPPRESS_MS;
   const keep = new Set(keepIds.filter((id) => id != null));
   const windows = await chrome.windows.getAll({ windowTypes: ["normal", "popup"] });
   for (const win of windows) {
@@ -624,6 +666,7 @@ async function prepareLockWindow() {
   } finally {
     preparingLock = false;
     suppressEventsUntil = Date.now() + 1500;
+    suppressLockQuitUntil = Date.now() + LOCK_QUIT_SUPPRESS_MS;
   }
 }
 
@@ -674,7 +717,6 @@ async function resumeLockedSession() {
 async function runBrowserStartupLock() {
   if (startupLockFlowRunning) return;
   startupLockFlowRunning = true;
-  suppressLockQuitUntil = Date.now() + STARTUP_GRACE_MS;
   chrome.alarms.clear("idle-lock");
   try {
     await sleep(SESSION_RESTORE_WAIT_MS);
@@ -683,6 +725,7 @@ async function runBrowserStartupLock() {
     if (!state.isConfigured) return;
 
     if (state.autoLockOnStartup) {
+      await setState({ lockOnNextOpen: false });
       if (!state.isLocked) {
         const res = await lockBrowser();
         if (!res.ok) await emergencyUnlockBrowser();
@@ -740,7 +783,7 @@ async function unlockBrowser() {
   suppressEventsUntil = Date.now() + 5000;
   preparingLock = false;
 
-  await setState({ isLocked: false });
+  await setState({ isLocked: false, lockOnNextOpen: false });
 
   await closeLockPopupSafely(session);
 
@@ -851,6 +894,7 @@ function scheduleStartupLockRecovery() {
 
 chrome.windows.onCreated.addListener((win) => {
   setTimeout(async () => {
+    await maybeAutoLockOnWindowOpen();
     if (preparingLock || Date.now() < suppressEventsUntil) return;
     const state = await getState();
     if (!state.isLocked) return;
@@ -928,28 +972,26 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 });
 
 async function handleLockPopupClosedByUser() {
-  if (
-    preparingLock ||
-    closingBrowserFromLockDismiss ||
-    startupLockFlowRunning ||
-    isWithinStartupGrace() ||
-    Date.now() < suppressLockQuitUntil
-  ) {
+  if (preparingLock || closingBrowserFromLockDismiss) {
+    return;
+  }
+
+  if (Date.now() < suppressLockQuitUntil) {
     try {
       await resumeLockedSession();
     } catch {
-      await emergencyUnlockBrowser();
+      /* ignore */
     }
     return;
   }
 
   const session = await getSession();
   const shownAt = session.lockPopupShownAt || 0;
-  if (!shownAt || Date.now() - shownAt < LOCK_POPUP_MIN_AGE_MS) {
+  if (!session.lockReady || !shownAt || Date.now() - shownAt < LOCK_POPUP_MIN_AGE_MS) {
     try {
       await resumeLockedSession();
     } catch {
-      await emergencyUnlockBrowser();
+      /* ignore */
     }
     return;
   }
@@ -969,8 +1011,11 @@ async function closeBrowserOnLockDismiss() {
   stopEnforceAlarm();
   chrome.alarms.clear("idle-lock");
 
-  // Clear persisted lock so the next launch is not stuck without a PIN screen.
-  await setState({ isLocked: false });
+  const state = await getState();
+  await setState({
+    isLocked: false,
+    lockOnNextOpen: state.autoLockOnStartup,
+  });
   await clearSession();
 
   try {
@@ -989,14 +1034,17 @@ async function closeBrowserOnLockDismiss() {
 
 chrome.windows.onRemoved.addListener((windowId) => {
   setTimeout(async () => {
-    if (closingBrowserFromLockDismiss) return;
-    const state = await getState();
-    if (!state.isLocked) return;
-
-    const session = await getSession();
-    if (session.lockWindowId !== windowId) return;
-
-    await handleLockPopupClosedByUser();
+    if (!closingBrowserFromLockDismiss) {
+      const state = await getState();
+      if (state.isLocked) {
+        const session = await getSession();
+        if (session.lockWindowId === windowId) {
+          await handleLockPopupClosedByUser();
+        }
+      } else {
+        await noteAllWindowsClosed();
+      }
+    }
   }, 200);
 });
 
