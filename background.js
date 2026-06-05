@@ -12,7 +12,7 @@ const EXTENSION_ORIGIN = () => {
 
 /** Compact popup — fits PIN panel only */
 const LOCK_WIDTH = 288;
-const LOCK_HEIGHT = 318;
+const LOCK_HEIGHT = 348;
 const SIZE_TOLERANCE = 12;
 
 let applyingBounds = false;
@@ -977,18 +977,11 @@ async function handleLockPopupClosedByUser() {
     return;
   }
 
-  if (Date.now() < suppressLockQuitUntil) {
-    try {
-      await resumeLockedSession();
-    } catch {
-      /* ignore */
-    }
-    return;
-  }
-
   const session = await getSession();
-  const shownAt = session.lockPopupShownAt || 0;
-  if (!session.lockReady || !shownAt || Date.now() - shownAt < LOCK_POPUP_MIN_AGE_MS) {
+
+  // Still setting up — ignore accidental teardown; recreate PIN if needed.
+  if (!session.lockReady) {
+    if (Date.now() < suppressLockQuitUntil) return;
     try {
       await resumeLockedSession();
     } catch {
@@ -997,6 +990,7 @@ async function handleLockPopupClosedByUser() {
     return;
   }
 
+  // PIN screen is ready — X quits Brave (do not refresh the popup).
   await closeBrowserOnLockDismiss();
 }
 
