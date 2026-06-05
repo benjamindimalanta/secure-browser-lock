@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Browser Secure",
   "short_name": "BrowserSec",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "PIN-lock your browser on startup, idle, or demand. Hides tabs until unlock. Data stays on your device.",
   "homepage_url": "https://github.com/benjamindimalanta/secure-browser-lock",
   "content_security_policy": {
