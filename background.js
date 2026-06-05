@@ -35,7 +35,7 @@ const SESSION_DEFAULTS = {
   collapsedGroupIds: [],
   savedWindowBounds: null,
   lockReady: false,
-  /** User closed the lock popup with X — do not reopen until they use Brave again. */
+  lockPopupShownAt: null,
   lockUiDismissed: false,
 };
 
@@ -55,8 +55,10 @@ let browserLaunchTime = Date.now();
 const ENFORCE_DEBOUNCE_MS = 1000;
 /** Wait for Brave/Edge session restore before minimize + popup (avoids visible main window). */
 const SESSION_RESTORE_WAIT_MS = 1800;
-/** After launch, recreate lock UI instead of closing the browser if the popup vanishes. */
-const STARTUP_GRACE_MS = 20000;
+/** Never quit the browser during launch — popup teardown used to fire false quits. */
+const STARTUP_GRACE_MS = 45000;
+/** Lock popup must be visible this long before X counts as user quit. */
+const LOCK_POPUP_MIN_AGE_MS = 4000;
 const STASH_MINIMIZE_MAX_ATTEMPTS = 8;
 
 function sleep(ms) {
@@ -93,6 +95,8 @@ async function validateAndRepairLockSession() {
     return;
   }
 
+  if (await findLockPopup()) return;
+
   const session = await getSession();
   if (!session.lockReady) return;
 
@@ -115,8 +119,42 @@ async function validateAndRepairLockSession() {
       lockReady: false,
       lockWindowId: null,
       lockTabId: null,
+      lockPopupShownAt: null,
       lockUiDismissed: false,
     });
+  }
+}
+
+/** Service worker start: never trap the user without a visible PIN screen. */
+async function bootstrapServiceWorker() {
+  browserLaunchTime = Date.now();
+  suppressLockQuitUntil = Date.now() + STARTUP_GRACE_MS;
+  chrome.alarms.clear("idle-lock");
+
+  await purgeExtensionPagesFromHistory();
+  await validateAndRepairLockSession();
+
+  const state = await getState();
+  if (!state.isConfigured) return;
+
+  if (state.isLocked) {
+    if (!(await findLockPopup())) {
+      await setSession({
+        lockReady: false,
+        lockWindowId: null,
+        lockTabId: null,
+        lockPopupShownAt: null,
+      });
+    }
+    scheduleStartupLockRecovery();
+    if (!startupLockFlowRunning) {
+      runBrowserStartupLock().catch(() => {});
+    }
+    return;
+  }
+
+  if (state.idleLockMinutes > 0) {
+    resetIdleAlarm(state.idleLockMinutes);
   }
 }
 
@@ -561,7 +599,10 @@ async function prepareLockWindow() {
 
     const popupId = await ensureLockPopup();
     const afterPopup = await getSession();
-    await closeOtherWindowsExcept([stashWindowId, popupId]);
+    if (!(await findLockPopup())) {
+      throw new Error("lock_popup_missing");
+    }
+
     await ensureStashMinimized(stashWindowId);
     await purgeExtensionPagesFromHistory();
 
@@ -570,9 +611,14 @@ async function prepareLockWindow() {
       lockUiDismissed: false,
       lockWindowId: popupId,
       lockTabId: afterPopup.lockTabId,
+      lockPopupShownAt: Date.now(),
     });
 
     scheduleStashMinimizeWatchdog(stashWindowId);
+
+    setTimeout(() => {
+      closeOtherWindowsExcept([stashWindowId, popupId]).catch(() => {});
+    }, 1200);
 
     return popupId;
   } finally {
@@ -628,6 +674,7 @@ async function resumeLockedSession() {
 async function runBrowserStartupLock() {
   if (startupLockFlowRunning) return;
   startupLockFlowRunning = true;
+  suppressLockQuitUntil = Date.now() + STARTUP_GRACE_MS;
   chrome.alarms.clear("idle-lock");
   try {
     await sleep(SESSION_RESTORE_WAIT_MS);
@@ -668,7 +715,12 @@ async function lockBrowser() {
 
   await setState({ isLocked: true });
   await clearSession();
-  await prepareLockWindow();
+  try {
+    await prepareLockWindow();
+  } catch {
+    await emergencyUnlockBrowser();
+    return { ok: false, error: "lock_ui_failed" };
+  }
   await purgeExtensionPagesFromHistory();
 
   if (!(await findLockPopup())) {
@@ -758,33 +810,24 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 chrome.runtime.onInstalled.addListener(async (details) => {
-  browserLaunchTime = Date.now();
-  await validateAndRepairLockSession();
-
-  const state = await getState();
-  if (details.reason === "install" || !state.isConfigured) {
+  if (details.reason === "install" || !(await getState()).isConfigured) {
     chrome.runtime.openOptionsPage();
     return;
   }
   if (details.reason === "update") {
+    const state = await getState();
     if (state.idleLockMinutes === 0) {
       await setState({ idleLockMinutes: 5 });
-      resetIdleAlarm(5);
     }
     if (state.isLocked && !(await findLockPopup())) {
       await emergencyUnlockBrowser();
     }
   }
-  if (state.autoLockOnStartup) {
-    runBrowserStartupLock().catch(() => {});
-  } else if (!state.isLocked && (await getState()).idleLockMinutes > 0) {
-    resetIdleAlarm((await getState()).idleLockMinutes);
-  }
+  bootstrapServiceWorker().catch(() => {});
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  browserLaunchTime = Date.now();
-  runBrowserStartupLock().catch(() => {});
+  bootstrapServiceWorker().catch(() => {});
 });
 
 function scheduleStartupLockRecovery() {
@@ -884,6 +927,36 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
   }, 300);
 });
 
+async function handleLockPopupClosedByUser() {
+  if (
+    preparingLock ||
+    closingBrowserFromLockDismiss ||
+    startupLockFlowRunning ||
+    isWithinStartupGrace() ||
+    Date.now() < suppressLockQuitUntil
+  ) {
+    try {
+      await resumeLockedSession();
+    } catch {
+      await emergencyUnlockBrowser();
+    }
+    return;
+  }
+
+  const session = await getSession();
+  const shownAt = session.lockPopupShownAt || 0;
+  if (!shownAt || Date.now() - shownAt < LOCK_POPUP_MIN_AGE_MS) {
+    try {
+      await resumeLockedSession();
+    } catch {
+      await emergencyUnlockBrowser();
+    }
+    return;
+  }
+
+  await closeBrowserOnLockDismiss();
+}
+
 /** Close all windows when the user dismisses the lock popup (title-bar X). */
 async function closeBrowserOnLockDismiss() {
   if (closingBrowserFromLockDismiss) return;
@@ -913,6 +986,41 @@ async function closeBrowserOnLockDismiss() {
     /* ignore */
   }
 }
+
+chrome.windows.onRemoved.addListener((windowId) => {
+  setTimeout(async () => {
+    if (closingBrowserFromLockDismiss) return;
+    const state = await getState();
+    if (!state.isLocked) return;
+
+    const session = await getSession();
+    if (session.lockWindowId !== windowId) return;
+
+    await handleLockPopupClosedByUser();
+  }, 200);
+});
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  setTimeout(async () => {
+    if (closingBrowserFromLockDismiss) return;
+    const state = await getState();
+    if (!state.isLocked) return;
+
+    const session = await getSession();
+    if (session.lockTabId !== tabId) return;
+
+    const popup = await findLockPopup();
+    if (popup) {
+      await setSession({
+        lockWindowId: popup.popupId,
+        lockTabId: popup.tabId,
+      });
+      return;
+    }
+
+    await handleLockPopupClosedByUser();
+  }, 200);
+});
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const url = changeInfo.url || tab.url;
@@ -1036,30 +1144,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
-      case "LOCK_UI_READY":
+      case "LOCK_UI_READY": {
+        const readySession = await getSession();
+        if (readySession.lockTabId != null && _sender.tab?.id === readySession.lockTabId) {
+          await setSession({ lockPopupShownAt: Date.now() });
+        }
         sendResponse({ ok: true });
         break;
-      case "LOCK_QUIT": {
-        if (Date.now() < suppressLockQuitUntil) {
-          sendResponse({ ok: false, ignored: true });
-          break;
-        }
-        const quitState = await getState();
-        if (!quitState.isLocked) {
-          sendResponse({ ok: false });
-          break;
-        }
-        const quitSession = await getSession();
-        const tabId = _sender.tab?.id;
-        if (
-          !quitSession.lockReady ||
-          tabId == null ||
-          tabId !== quitSession.lockTabId
-        ) {
-          sendResponse({ ok: false });
-          break;
-        }
-        await closeBrowserOnLockDismiss();
+      }
+      case "RESET_LOCK_STATE": {
+        await emergencyUnlockBrowser();
         sendResponse({ ok: true });
         break;
       }
@@ -1070,18 +1164,4 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true;
 });
 
-(async () => {
-  browserLaunchTime = Date.now();
-  await purgeExtensionPagesFromHistory();
-  await validateAndRepairLockSession();
-
-  const state = await getState();
-  if (state.isLocked) {
-    scheduleStartupLockRecovery();
-    if (!startupLockFlowRunning) {
-      runBrowserStartupLock().catch(() => {});
-    }
-  } else if (state.idleLockMinutes > 0) {
-    resetIdleAlarm(state.idleLockMinutes);
-  }
-})();
+bootstrapServiceWorker().catch(() => {});

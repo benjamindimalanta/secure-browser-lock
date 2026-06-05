@@ -7,4 +7,6 @@ if errorlevel 1 (
 )
 echo.
 echo In Brave: go to brave://extensions and Reload or Remove "Secure Browser Lock".
+echo.
+echo If Brave still closes on open, also run: reset-brave-lock-state.bat
 pause

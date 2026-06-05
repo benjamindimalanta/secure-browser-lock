@@ -2,16 +2,7 @@ const form = document.getElementById("unlock-form");
 const pinInput = document.getElementById("pin");
 const errorEl = document.getElementById("error");
 
-let lockUiReadyAt = 0;
-setTimeout(() => {
-  lockUiReadyAt = Date.now();
-  chrome.runtime.sendMessage({ type: "LOCK_UI_READY" }).catch(() => {});
-}, 600);
-
-window.addEventListener("pagehide", () => {
-  if (!lockUiReadyAt || Date.now() - lockUiReadyAt < 1500) return;
-  chrome.runtime.sendMessage({ type: "LOCK_QUIT" }).catch(() => {});
-});
+chrome.runtime.sendMessage({ type: "LOCK_UI_READY" }).catch(() => {});
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
