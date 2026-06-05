@@ -47,10 +47,14 @@ let suppressEventsUntil = 0;
 let closingBrowserFromLockDismiss = false;
 /** Prevents IIFE + onStartup from both preparing lock at once. */
 let startupLockFlowRunning = false;
+/** Startup grace — never quit the whole browser during this window (stale session / races). */
+let browserLaunchTime = Date.now();
 
 const ENFORCE_DEBOUNCE_MS = 1000;
 /** Wait for Brave/Edge session restore before minimize + popup (avoids visible main window). */
 const SESSION_RESTORE_WAIT_MS = 1800;
+/** After launch, recreate lock UI instead of closing the browser if the popup vanishes. */
+const STARTUP_GRACE_MS = 20000;
 const STASH_MINIMIZE_MAX_ATTEMPTS = 8;
 
 function sleep(ms) {
@@ -77,6 +81,45 @@ async function setSession(partial) {
 
 async function clearSession() {
   await chrome.storage.session.set({ ...SESSION_DEFAULTS });
+}
+
+/** Drop stale session IDs (e.g. Brave background process kept session after quit). */
+async function validateAndRepairLockSession() {
+  const state = await getState();
+  if (!state.isLocked) {
+    await clearSession();
+    return;
+  }
+
+  const session = await getSession();
+  if (!session.lockReady) return;
+
+  let popupValid = false;
+  if (session.lockWindowId != null && session.lockTabId != null) {
+    try {
+      const win = await chrome.windows.get(session.lockWindowId);
+      const tab = await chrome.tabs.get(session.lockTabId);
+      popupValid =
+        win.type === "popup" &&
+        tab.windowId === session.lockWindowId &&
+        isLockTab(tab);
+    } catch {
+      popupValid = false;
+    }
+  }
+
+  if (!popupValid) {
+    await setSession({
+      lockReady: false,
+      lockWindowId: null,
+      lockTabId: null,
+      lockUiDismissed: false,
+    });
+  }
+}
+
+function isWithinStartupGrace() {
+  return Date.now() - browserLaunchTime < STARTUP_GRACE_MS;
 }
 
 function isLockPageUrl(url) {
@@ -497,6 +540,7 @@ async function prepareLockWindow() {
     await ensureStashMinimized(stashWindowId);
 
     const popupId = await ensureLockPopup();
+    const afterPopup = await getSession();
     await closeOtherWindowsExcept([stashWindowId, popupId]);
     await ensureStashMinimized(stashWindowId);
     await purgeExtensionPagesFromHistory();
@@ -505,6 +549,7 @@ async function prepareLockWindow() {
       lockReady: true,
       lockUiDismissed: false,
       lockWindowId: popupId,
+      lockTabId: afterPopup.lockTabId,
     });
 
     scheduleStashMinimizeWatchdog(stashWindowId);
@@ -669,6 +714,9 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
 });
 
 chrome.runtime.onInstalled.addListener(async (details) => {
+  browserLaunchTime = Date.now();
+  await validateAndRepairLockSession();
+
   const state = await getState();
   if (details.reason === "install" || !state.isConfigured) {
     chrome.runtime.openOptionsPage();
@@ -686,8 +734,23 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
+  browserLaunchTime = Date.now();
   runBrowserStartupLock().catch(() => {});
 });
+
+function scheduleStartupLockRecovery() {
+  setTimeout(async () => {
+    if (closingBrowserFromLockDismiss || preparingLock) return;
+    const state = await getState();
+    if (!state.isConfigured || !state.isLocked) return;
+    if (await findLockPopup()) return;
+    try {
+      await resumeLockedSession();
+    } catch {
+      /* ignore */
+    }
+  }, SESSION_RESTORE_WAIT_MS + 2500);
+}
 
 chrome.windows.onCreated.addListener((win) => {
   setTimeout(async () => {
@@ -770,11 +833,31 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 /** Close all windows when the user dismisses the lock popup (title-bar X). */
 async function closeBrowserOnLockDismiss() {
   if (closingBrowserFromLockDismiss) return;
+
+  if (isWithinStartupGrace()) {
+    await setSession({
+      lockReady: false,
+      lockWindowId: null,
+      lockTabId: null,
+    });
+    try {
+      await resumeLockedSession();
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+
   closingBrowserFromLockDismiss = true;
   suppressEventsUntil = Date.now() + 15000;
   preparingLock = false;
   clearTimeout(enforceTimer);
   enforceTimer = null;
+  stopEnforceAlarm();
+
+  // Clear persisted lock so the next launch is not stuck without a PIN screen.
+  await setState({ isLocked: false });
+  await clearSession();
 
   try {
     const windows = await chrome.windows.getAll({ populate: false });
@@ -956,25 +1039,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 (async () => {
+  browserLaunchTime = Date.now();
   await purgeExtensionPagesFromHistory();
+  await validateAndRepairLockSession();
 
   const state = await getState();
   if (state.isLocked) {
-    await sleep(500);
-    if (startupLockFlowRunning) {
-      /* onStartup will finish lock after session restore */
-    } else {
-      const session = await getSession();
-      if (session.lockReady) {
-        scheduleEnforce();
-        await ensureStashMinimized(session.stashWindowId);
-      } else if ((await getState()).isLocked && !preparingLock) {
-        await resumeLockedSession();
-      }
-      startEnforceAlarm();
+    scheduleStartupLockRecovery();
+    if (!startupLockFlowRunning) {
+      runBrowserStartupLock().catch(() => {});
     }
-  }
-  if (state.idleLockMinutes > 0 && !state.isLocked) {
+  } else if (state.idleLockMinutes > 0) {
     resetIdleAlarm(state.idleLockMinutes);
   }
 })();
