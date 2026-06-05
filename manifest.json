@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Secure Browser Lock",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Lock Chrome/Edge/Brave with a PIN. Popup lock, hidden tabs, no history entry.",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'; base-uri 'self';"

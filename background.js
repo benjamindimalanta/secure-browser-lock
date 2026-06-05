@@ -56,7 +56,8 @@ let browserLaunchTime = Date.now();
 
 const ENFORCE_DEBOUNCE_MS = 1000;
 /** Wait for Brave/Edge session restore before minimize + popup (avoids visible main window). */
-const SESSION_RESTORE_WAIT_MS = 1800;
+/** Brief pause so Brave can open its window before we hide tabs and show PIN. */
+const SESSION_RESTORE_WAIT_MS = 500;
 /** Idle-alarm / enforce guard during cold start only. */
 const STARTUP_GRACE_MS = 15000;
 /** Lock popup must be visible this long before X counts as user quit. */
@@ -889,12 +890,12 @@ function scheduleStartupLockRecovery() {
       await sleep(800);
     }
     await emergencyUnlockBrowser();
-  }, SESSION_RESTORE_WAIT_MS + 2500);
+  }, SESSION_RESTORE_WAIT_MS + 1200);
 }
 
 chrome.windows.onCreated.addListener((win) => {
+  setTimeout(() => maybeAutoLockOnWindowOpen().catch(() => {}), 80);
   setTimeout(async () => {
-    await maybeAutoLockOnWindowOpen();
     if (preparingLock || Date.now() < suppressEventsUntil) return;
     const state = await getState();
     if (!state.isLocked) return;
