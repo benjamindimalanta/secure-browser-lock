@@ -45,6 +45,8 @@ let enforceTimer = null;
 let suppressEventsUntil = 0;
 /** User closed the lock popup (X) — close every window so the browser exits. */
 let closingBrowserFromLockDismiss = false;
+/** Ignore LOCK_QUIT while the extension closes the lock window itself. */
+let suppressLockQuitUntil = 0;
 /** Prevents IIFE + onStartup from both preparing lock at once. */
 let startupLockFlowRunning = false;
 /** Startup grace — never quit the whole browser during this window (stale session / races). */
@@ -218,6 +220,7 @@ async function handleStrayLockTab(tab) {
 }
 
 async function closeLockPopupSafely(session) {
+  suppressLockQuitUntil = Date.now() + 5000;
   if (session.lockWindowId != null) {
     try {
       await chrome.windows.remove(session.lockWindowId);
@@ -226,6 +229,21 @@ async function closeLockPopupSafely(session) {
     }
   }
   await purgeExtensionPagesFromHistory();
+}
+
+/** If lock UI cannot be shown, release the browser instead of trapping the user. */
+async function emergencyUnlockBrowser() {
+  clearTimeout(enforceTimer);
+  enforceTimer = null;
+  stopEnforceAlarm();
+  preparingLock = false;
+  suppressLockQuitUntil = Date.now() + 5000;
+  await setState({ isLocked: false });
+  await clearSession();
+  const state = await getState();
+  if (state.idleLockMinutes > 0) {
+    resetIdleAlarm(state.idleLockMinutes);
+  }
 }
 
 function supportsTabHide() {
@@ -415,6 +433,7 @@ async function ensureLockPopup() {
     return existing.popupId;
   }
 
+  suppressLockQuitUntil = Date.now() + 5000;
   const bounds = await getCenteredBounds();
   const popup = await chrome.windows.create({
     url: LOCK_PAGE(),
@@ -481,6 +500,7 @@ async function showAllHiddenTabs() {
 }
 
 async function closeOtherWindowsExcept(keepIds) {
+  suppressLockQuitUntil = Date.now() + 5000;
   const keep = new Set(keepIds.filter((id) => id != null));
   const windows = await chrome.windows.getAll({ windowTypes: ["normal", "popup"] });
   for (const win of windows) {
@@ -608,6 +628,7 @@ async function resumeLockedSession() {
 async function runBrowserStartupLock() {
   if (startupLockFlowRunning) return;
   startupLockFlowRunning = true;
+  chrome.alarms.clear("idle-lock");
   try {
     await sleep(SESSION_RESTORE_WAIT_MS);
 
@@ -616,9 +637,11 @@ async function runBrowserStartupLock() {
 
     if (state.autoLockOnStartup) {
       if (!state.isLocked) {
-        await lockBrowser();
+        const res = await lockBrowser();
+        if (!res.ok) await emergencyUnlockBrowser();
       } else {
         await resumeLockedSession();
+        if (!(await findLockPopup())) await emergencyUnlockBrowser();
       }
       startEnforceAlarm();
       return;
@@ -626,7 +649,10 @@ async function runBrowserStartupLock() {
 
     if (state.isLocked) {
       await resumeLockedSession();
+      if (!(await findLockPopup())) await emergencyUnlockBrowser();
       startEnforceAlarm();
+    } else if (state.idleLockMinutes > 0) {
+      resetIdleAlarm(state.idleLockMinutes);
     }
   } finally {
     startupLockFlowRunning = false;
@@ -644,6 +670,11 @@ async function lockBrowser() {
   await clearSession();
   await prepareLockWindow();
   await purgeExtensionPagesFromHistory();
+
+  if (!(await findLockPopup())) {
+    await emergencyUnlockBrowser();
+    return { ok: false, error: "lock_ui_failed" };
+  }
 
   resetIdleAlarm(0);
   return { ok: true };
@@ -707,9 +738,22 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     return;
   }
   if (alarm.name !== "idle-lock") return;
+  if (
+    startupLockFlowRunning ||
+    preparingLock ||
+    closingBrowserFromLockDismiss ||
+    isWithinStartupGrace()
+  ) {
+    const state = await getState();
+    if (!state.isLocked && state.idleLockMinutes > 0) {
+      resetIdleAlarm(state.idleLockMinutes);
+    }
+    return;
+  }
   const state = await getState();
   if (state.isConfigured && !state.isLocked) {
-    await lockBrowser();
+    const res = await lockBrowser();
+    if (!res.ok) await emergencyUnlockBrowser();
   }
 });
 
@@ -722,9 +766,14 @@ chrome.runtime.onInstalled.addListener(async (details) => {
     chrome.runtime.openOptionsPage();
     return;
   }
-  if (details.reason === "update" && state.idleLockMinutes === 0) {
-    await setState({ idleLockMinutes: 5 });
-    resetIdleAlarm(5);
+  if (details.reason === "update") {
+    if (state.idleLockMinutes === 0) {
+      await setState({ idleLockMinutes: 5 });
+      resetIdleAlarm(5);
+    }
+    if (state.isLocked && !(await findLockPopup())) {
+      await emergencyUnlockBrowser();
+    }
   }
   if (state.autoLockOnStartup) {
     runBrowserStartupLock().catch(() => {});
@@ -744,11 +793,16 @@ function scheduleStartupLockRecovery() {
     const state = await getState();
     if (!state.isConfigured || !state.isLocked) return;
     if (await findLockPopup()) return;
-    try {
-      await resumeLockedSession();
-    } catch {
-      /* ignore */
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await resumeLockedSession();
+      } catch {
+        /* ignore */
+      }
+      if (await findLockPopup()) return;
+      await sleep(800);
     }
+    await emergencyUnlockBrowser();
   }, SESSION_RESTORE_WAIT_MS + 2500);
 }
 
@@ -834,26 +888,13 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 async function closeBrowserOnLockDismiss() {
   if (closingBrowserFromLockDismiss) return;
 
-  if (isWithinStartupGrace()) {
-    await setSession({
-      lockReady: false,
-      lockWindowId: null,
-      lockTabId: null,
-    });
-    try {
-      await resumeLockedSession();
-    } catch {
-      /* ignore */
-    }
-    return;
-  }
-
   closingBrowserFromLockDismiss = true;
   suppressEventsUntil = Date.now() + 15000;
   preparingLock = false;
   clearTimeout(enforceTimer);
   enforceTimer = null;
   stopEnforceAlarm();
+  chrome.alarms.clear("idle-lock");
 
   // Clear persisted lock so the next launch is not stuck without a PIN screen.
   await setState({ isLocked: false });
@@ -872,42 +913,6 @@ async function closeBrowserOnLockDismiss() {
     /* ignore */
   }
 }
-
-chrome.windows.onRemoved.addListener((windowId) => {
-  setTimeout(async () => {
-    if (preparingLock || closingBrowserFromLockDismiss) return;
-    if (Date.now() < suppressEventsUntil) return;
-    const state = await getState();
-    if (!state.isLocked) return;
-
-    const session = await getSession();
-    if (
-      session.lockReady &&
-      windowId === session.lockWindowId &&
-      session.lockTabId != null
-    ) {
-      await closeBrowserOnLockDismiss();
-    }
-  }, 100);
-});
-
-chrome.tabs.onRemoved.addListener((tabId) => {
-  setTimeout(async () => {
-    if (preparingLock || closingBrowserFromLockDismiss) return;
-    if (Date.now() < suppressEventsUntil) return;
-    const state = await getState();
-    if (!state.isLocked) return;
-
-    const session = await getSession();
-    if (
-      session.lockReady &&
-      tabId === session.lockTabId &&
-      session.lockWindowId != null
-    ) {
-      await closeBrowserOnLockDismiss();
-    }
-  }, 100);
-});
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const url = changeInfo.url || tab.url;
@@ -1028,6 +1033,33 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
             await prepareLockWindow();
           }
         }
+        sendResponse({ ok: true });
+        break;
+      }
+      case "LOCK_UI_READY":
+        sendResponse({ ok: true });
+        break;
+      case "LOCK_QUIT": {
+        if (Date.now() < suppressLockQuitUntil) {
+          sendResponse({ ok: false, ignored: true });
+          break;
+        }
+        const quitState = await getState();
+        if (!quitState.isLocked) {
+          sendResponse({ ok: false });
+          break;
+        }
+        const quitSession = await getSession();
+        const tabId = _sender.tab?.id;
+        if (
+          !quitSession.lockReady ||
+          tabId == null ||
+          tabId !== quitSession.lockTabId
+        ) {
+          sendResponse({ ok: false });
+          break;
+        }
+        await closeBrowserOnLockDismiss();
         sendResponse({ ok: true });
         break;
       }
