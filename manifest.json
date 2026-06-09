@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Browser Secure",
   "short_name": "BrowserSec",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "PIN-lock your browser on startup, idle, or demand. Hides tabs until unlock. Data stays on your device.",
   "homepage_url": "https://github.com/benjamindimalanta/secure-browser-lock",
   "content_security_policy": {
@@ -37,6 +37,15 @@
     "128": "icons/icon128.png"
   },
   "options_page": "setup.html",
+  "commands": {
+    "lock-browser": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+L",
+        "mac": "Command+Shift+L"
+      },
+      "description": "Lock the browser"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*", "file://*/*"],

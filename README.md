@@ -3,7 +3,7 @@
 **PIN-lock your Chromium browser** (Chrome, Brave, Edge) on startup, idle, or demand. Hides tabs until you unlock. All data stays on your device.
 
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue)](manifest.json)
-[![Version](https://img.shields.io/badge/version-1.0.1-green)](manifest.json)
+[![Version](https://img.shields.io/badge/version-1.1.0-green)](manifest.json)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 
 ---
@@ -16,7 +16,8 @@
 | **Lock popup** | Compact PIN window (no address bar); tabs hidden in background |
 | **Auto-lock on open** | PIN required every time you open the browser (default: on) |
 | **Idle auto-lock** | Locks after **5 minutes** of no use (configurable; `0` = off) |
-| **Manual lock** | Lock anytime from the toolbar icon |
+| **Manual lock** | Lock anytime from the toolbar icon or **Ctrl+Shift+L** |
+| **Change PIN** | Update your PIN in Settings without reinstalling |
 | **Close (✕) quits browser** | Closing the PIN window exits Brave/Chrome/Edge; reopening asks for PIN again |
 | **History protection** | Lock pages removed from history (reduces Ctrl+Shift+T bypass) |
 | **Backup overlay** | Lock overlay on open web tabs while locked |
@@ -87,7 +88,14 @@ Requires **Manifest V3** support (Chromium 88+).
 ### Lock the browser
 
 - Click the **Browser Secure** toolbar icon → **Lock browser**, or
+- Press **Ctrl+Shift+L** (customize at `chrome://extensions/shortcuts`), or
 - Wait for **auto-lock** (on startup or after idle timeout).
+
+### Change PIN
+
+1. Open extension **Options** (must be unlocked).
+2. Under **Change PIN**, enter current PIN and new PIN.
+3. Click **Update PIN**.
 
 ### Unlock
 

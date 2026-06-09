@@ -1124,6 +1124,32 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
+      case "CHANGE_PIN": {
+        const state = await getState();
+        if (!state.isConfigured) {
+          sendResponse({ ok: false, error: "not_configured" });
+          break;
+        }
+        if (state.isLocked) {
+          sendResponse({ ok: false, error: "locked" });
+          break;
+        }
+        const currentPin = String(message.currentPin || "");
+        const newPin = String(message.newPin || "");
+        if (!/^\d{4,8}$/.test(currentPin) || !/^\d{4,8}$/.test(newPin)) {
+          sendResponse({ ok: false, error: "invalid_pin" });
+          break;
+        }
+        const valid = await verifyPin(currentPin, state.pinHash, state.pinSalt);
+        if (!valid) {
+          sendResponse({ ok: false, error: "wrong_pin" });
+          break;
+        }
+        const { hash, salt } = await hashPin(newPin);
+        await setState({ pinHash: hash, pinSalt: salt });
+        sendResponse({ ok: true });
+        break;
+      }
       case "VERIFY_PIN": {
         const state = await getState();
         const valid = await verifyPin(
@@ -1205,6 +1231,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
   })();
   return true;
+});
+
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== "lock-browser") return;
+  (async () => {
+    const state = await getState();
+    if (!state.isConfigured || state.isLocked) return;
+    const res = await lockBrowser();
+    if (res.ok) startEnforceAlarm();
+  })().catch(() => {});
 });
 
 bootstrapServiceWorker().catch(() => {});

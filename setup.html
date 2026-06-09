@@ -14,8 +14,8 @@
         <p class="lead">Set a PIN to lock all tabs. Data stays on this device only.</p>
       </header>
 
-      <section class="card" id="pin-section">
-        <h2>PIN</h2>
+      <section class="card" id="pin-section-first" hidden>
+        <h2>Set PIN</h2>
         <p class="hint">Use 4–8 digits. Avoid birthdays or 1234.</p>
         <label>
           <span>New PIN</span>
@@ -29,6 +29,25 @@
         <button type="button" id="save-pin" class="btn primary">Save PIN</button>
       </section>
 
+      <section class="card" id="pin-section-change" hidden>
+        <h2>Change PIN</h2>
+        <p class="hint">Enter your current PIN, then choose a new one.</p>
+        <label>
+          <span>Current PIN</span>
+          <input type="password" id="current-pin" inputmode="numeric" maxlength="8" autocomplete="current-password" />
+        </label>
+        <label>
+          <span>New PIN</span>
+          <input type="password" id="new-pin" inputmode="numeric" maxlength="8" autocomplete="new-password" />
+        </label>
+        <label>
+          <span>Confirm new PIN</span>
+          <input type="password" id="new-pin-confirm" inputmode="numeric" maxlength="8" autocomplete="new-password" />
+        </label>
+        <p class="error" id="change-pin-error" hidden></p>
+        <button type="button" id="change-pin-btn" class="btn primary">Update PIN</button>
+      </section>
+
       <section class="card">
         <h2>Behavior</h2>
         <label class="check">
@@ -39,6 +58,10 @@
           <span>Auto-lock after idle (minutes, 0 = off)</span>
           <input type="number" id="idle-minutes" min="0" max="120" value="5" />
         </label>
+        <p class="hint shortcut-hint">
+          Keyboard shortcut: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> to lock instantly
+          (change in <code>brave://extensions/shortcuts</code>).
+        </p>
         <button type="button" id="save-settings" class="btn secondary">Save settings</button>
         <p class="msg" id="settings-msg" hidden>Saved.</p>
       </section>
