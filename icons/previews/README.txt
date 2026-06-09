@@ -1,11 +1,11 @@
-Browser Secure — icon options
+Browser Secure — icon guidelines
 
-Active icons (toolbar + store): ../icon16.png, icon48.png, icon128.png
-  Style: Minimal teal-to-blue gradient with white lock outline
+Active icons: ../icon16.png, icon48.png, icon128.png
 
-Previews in this folder (pick a favorite and tell us to switch):
-  minimal-teal-lock.png   — clean, best at small sizes (current)
-  monogram-b-lock.png     — "B" + lock on dark navy
-  browser-window-lock.png — browser window + gold lock
+IMPORTANT for custom icons:
+- Use PNG only (not JPG) — Chrome/Brave require PNG in manifest.json
+- Must be exact squares: 16x16, 48x48, 128x128 pixels
+- Fill the whole square — no large white borders (causes stretched/squashed look)
+- Export all three sizes from the same artwork
 
-To switch: replace icon16/48/128.png with a resized copy of your chosen preview.
+Previews in this folder are for comparison only.
