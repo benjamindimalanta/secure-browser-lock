@@ -64,6 +64,13 @@ h1 {
   line-height: 1.35;
 }
 
+.version {
+  margin-top: 6px;
+  color: #475569;
+  font-size: 0.58rem;
+  letter-spacing: 0.02em;
+}
+
 form {
   display: flex;
   flex-direction: column;

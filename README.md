@@ -3,7 +3,7 @@
 **PIN-lock your Chromium browser** (Chrome, Brave, Edge) on startup, idle, or demand. Hides tabs until you unlock. All data stays on your device.
 
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue)](manifest.json)
-[![Version](https://img.shields.io/badge/version-1.1.0-green)](manifest.json)
+[![Version](https://img.shields.io/badge/version-1.1.2-green)](manifest.json)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 
 ---

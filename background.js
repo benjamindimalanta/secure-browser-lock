@@ -27,6 +27,8 @@ const DEFAULTS = {
   idleLockMinutes: 5,
   /** Set when all windows close — lock again on next open (Brave background process). */
   lockOnNextOpen: false,
+  /** Laptop shutdown / crash while locked — recover on next start instead of quitting. */
+  recoveryLockPending: false,
 };
 
 const SESSION_DEFAULTS = {
@@ -51,6 +53,8 @@ let closingBrowserFromLockDismiss = false;
 let suppressLockQuitUntil = 0;
 /** Prevents IIFE + onStartup from both preparing lock at once. */
 let startupLockFlowRunning = false;
+/** Startup/crash recovery — never quit browser when popup vanishes during this window. */
+let coldBootRecoveryUntil = 0;
 /** Startup grace — never quit the whole browser during this window (stale session / races). */
 let browserLaunchTime = Date.now();
 
@@ -172,16 +176,27 @@ async function bootstrapServiceWorker() {
   chrome.alarms.clear("idle-lock");
 
   await purgeExtensionPagesFromHistory();
-  await validateAndRepairLockSession();
 
   const state = await getState();
+  const hadUncleanLockExit =
+    state.recoveryLockPending || (state.isLocked && !(await findLockPopup()));
+
+  if (hadUncleanLockExit) {
+    coldBootRecoveryUntil = Date.now() + 20000;
+    await setState({ recoveryLockPending: false });
+    await clearSession();
+  } else {
+    await validateAndRepairLockSession();
+  }
+
   if (!state.isConfigured) return;
 
+  const fresh = await getState();
   const shouldAutoLock =
-    state.autoLockOnStartup && (!state.isLocked || state.lockOnNextOpen);
+    fresh.autoLockOnStartup && (!fresh.isLocked || fresh.lockOnNextOpen);
 
-  if (state.isLocked || shouldAutoLock) {
-    if (state.isLocked && !(await findLockPopup())) {
+  if (fresh.isLocked || shouldAutoLock) {
+    if (fresh.isLocked && !(await findLockPopup())) {
       await setSession({
         lockReady: false,
         lockWindowId: null,
@@ -196,8 +211,8 @@ async function bootstrapServiceWorker() {
     return;
   }
 
-  if (state.idleLockMinutes > 0) {
-    resetIdleAlarm(state.idleLockMinutes);
+  if (fresh.idleLockMinutes > 0) {
+    resetIdleAlarm(fresh.idleLockMinutes);
   }
 }
 
@@ -973,14 +988,23 @@ chrome.windows.onFocusChanged.addListener((windowId) => {
 });
 
 async function handleLockPopupClosedByUser() {
-  if (preparingLock || closingBrowserFromLockDismiss) {
+  if (preparingLock || closingBrowserFromLockDismiss || startupLockFlowRunning) {
+    return;
+  }
+
+  if (Date.now() < coldBootRecoveryUntil) {
+    try {
+      await resumeLockedSession();
+    } catch {
+      await emergencyUnlockBrowser();
+    }
     return;
   }
 
   const session = await getSession();
 
   // Still setting up — ignore accidental teardown; recreate PIN if needed.
-  if (!session.lockReady) {
+  if (!session.lockReady || !session.lockPopupShownAt) {
     if (Date.now() < suppressLockQuitUntil) return;
     try {
       await resumeLockedSession();
@@ -990,7 +1014,7 @@ async function handleLockPopupClosedByUser() {
     return;
   }
 
-  // PIN screen is ready — X quits Brave (do not refresh the popup).
+  // PIN screen was visible and user closed the window (X) — quit Brave.
   await closeBrowserOnLockDismiss();
 }
 
@@ -1217,6 +1241,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const readySession = await getSession();
         if (readySession.lockTabId != null && _sender.tab?.id === readySession.lockTabId) {
           await setSession({ lockPopupShownAt: Date.now() });
+          coldBootRecoveryUntil = 0;
         }
         sendResponse({ ok: true });
         break;
@@ -1241,6 +1266,14 @@ chrome.commands.onCommand.addListener((command) => {
     const res = await lockBrowser();
     if (res.ok) startEnforceAlarm();
   })().catch(() => {});
+});
+
+chrome.runtime.onSuspend.addListener(() => {
+  getState().then((state) => {
+    if (state.isLocked) {
+      chrome.storage.local.set({ recoveryLockPending: true });
+    }
+  });
 });
 
 bootstrapServiceWorker().catch(() => {});

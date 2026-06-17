@@ -1,6 +1,12 @@
 const form = document.getElementById("unlock-form");
 const pinInput = document.getElementById("pin");
 const errorEl = document.getElementById("error");
+const versionEl = document.getElementById("extension-version");
+
+const manifest = chrome.runtime.getManifest();
+if (versionEl && manifest?.version) {
+  versionEl.textContent = `Browser Secure v${manifest.version}`;
+}
 
 chrome.runtime.sendMessage({ type: "LOCK_UI_READY" }).catch(() => {});
 

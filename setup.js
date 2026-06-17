@@ -13,6 +13,12 @@ const autoStartup = document.getElementById("auto-startup");
 const idleMinutes = document.getElementById("idle-minutes");
 const saveSettingsBtn = document.getElementById("save-settings");
 const settingsMsg = document.getElementById("settings-msg");
+const versionEl = document.getElementById("extension-version");
+
+const manifest = chrome.runtime.getManifest();
+if (versionEl && manifest?.version) {
+  versionEl.textContent = `Version ${manifest.version}`;
+}
 
 function validatePinFormat(pin) {
   return /^\d{4,8}$/.test(pin);
