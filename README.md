@@ -3,7 +3,7 @@
 **PIN-lock your Chromium browser** (Chrome, Brave, Edge) on startup, idle, or demand. Hides tabs until you unlock. All data stays on your device.
 
 [![Manifest V3](https://img.shields.io/badge/Manifest-V3-blue)](manifest.json)
-[![Version](https://img.shields.io/badge/version-1.1.2-green)](manifest.json)
+[![Version](https://img.shields.io/badge/version-1.1.4-green)](manifest.json)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 
 ---
@@ -15,7 +15,7 @@
 | **PIN lock** | 4–8 digit PIN; stored as salted PBKDF2 hash only (never plain text) |
 | **Lock popup** | Compact PIN window (no address bar); tabs hidden in background |
 | **Auto-lock on open** | PIN required every time you open the browser (default: on) |
-| **Idle auto-lock** | Locks after **5 minutes** of no use (configurable; `0` = off) |
+| **Idle auto-lock** | Locks after **10 minutes** of no use (configurable; `0` = off) |
 | **Manual lock** | Lock anytime from the toolbar icon or **Ctrl+Shift+L** |
 | **Change PIN** | Update your PIN in Settings without reinstalling |
 | **Close (✕) quits browser** | Closing the PIN window exits Brave/Chrome/Edge; reopening asks for PIN again |
@@ -72,7 +72,7 @@ Requires **Manifest V3** support (Chromium 88+).
 
 2. **Configure behavior** (Settings on the same page)
    - **Auto-lock when browser opens** — PIN required on every launch (recommended).
-   - **Auto-lock after idle** — Minutes of inactivity before lock (default: `5`; set `0` to disable).
+   - **Auto-lock after idle** — Minutes of inactivity before lock (default: `10`; set `0` to disable).
    - Click **Save settings**.
 
 3. **Optional: Incognito**

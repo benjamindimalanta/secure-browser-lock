@@ -43,16 +43,92 @@ body {
   margin-bottom: 6px;
 }
 
-h1 {
-  font-size: 0.95rem;
-  font-weight: 600;
+h1.brand {
+  font-size: 0.92rem;
+  font-weight: 700;
   margin-bottom: 2px;
+  letter-spacing: 0.01em;
 }
 
 .subtitle {
   color: #94a3b8;
-  font-size: 0.7rem;
+  font-size: 0.68rem;
   margin-bottom: 10px;
+}
+
+.forgot-row {
+  margin-top: 4px;
+}
+
+.forgot-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 0.68rem;
+  color: #7dd3fc;
+  cursor: pointer;
+  text-decoration: underline;
+  font-family: inherit;
+}
+
+.forgot-link:hover {
+  color: #bae6fd;
+}
+
+.forgot-panel {
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  text-align: left;
+}
+
+.forgot-text {
+  color: #94a3b8;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.forgot-panel .btn {
+  width: 100%;
+  margin-top: 6px;
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.btn-danger {
+  background: rgba(248, 113, 113, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(248, 113, 113, 0.35);
+}
+
+.btn-danger:hover {
+  background: rgba(248, 113, 113, 0.3);
+}
+
+.forgot-cancel {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  background: none;
+  border: none;
+  color: #64748b;
+  font-size: 0.65rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.forgot-cancel:hover {
+  color: #94a3b8;
 }
 
 .note {

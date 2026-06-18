@@ -12,7 +12,7 @@ const EXTENSION_ORIGIN = () => {
 
 /** Compact popup — fits PIN panel only */
 const LOCK_WIDTH = 288;
-const LOCK_HEIGHT = 348;
+const LOCK_HEIGHT = 388;
 const SIZE_TOLERANCE = 12;
 
 let applyingBounds = false;
@@ -24,7 +24,7 @@ const DEFAULTS = {
   pinSalt: null,
   isConfigured: false,
   autoLockOnStartup: true,
-  idleLockMinutes: 5,
+  idleLockMinutes: 10,
   /** Set when all windows close — lock again on next open (Brave background process). */
   lockOnNextOpen: false,
   /** Laptop shutdown / crash while locked — recover on next start instead of quitting. */
@@ -41,6 +41,8 @@ const SESSION_DEFAULTS = {
   lockReady: false,
   lockPopupShownAt: null,
   lockUiDismissed: false,
+  /** True only after OS browser launch (onStartup) — not on service worker recycle. */
+  pendingStartupLock: false,
 };
 
 let preparingLock = false;
@@ -191,11 +193,15 @@ async function bootstrapServiceWorker() {
 
   if (!state.isConfigured) return;
 
+  const sessionSnap = await getSession();
   const fresh = await getState();
-  const shouldAutoLock =
-    fresh.autoLockOnStartup && (!fresh.isLocked || fresh.lockOnNextOpen);
 
-  if (fresh.isLocked || shouldAutoLock) {
+  const needsStartupFlow =
+    fresh.isLocked ||
+    sessionSnap.pendingStartupLock ||
+    fresh.lockOnNextOpen;
+
+  if (needsStartupFlow) {
     if (fresh.isLocked && !(await findLockPopup())) {
       await setSession({
         lockReady: false,
@@ -669,7 +675,7 @@ async function prepareLockWindow() {
       lockUiDismissed: false,
       lockWindowId: popupId,
       lockTabId: afterPopup.lockTabId,
-      lockPopupShownAt: Date.now(),
+      lockPopupShownAt: null,
     });
 
     scheduleStashMinimizeWatchdog(stashWindowId);
@@ -729,7 +735,7 @@ async function resumeLockedSession() {
   scheduleEnforce();
 }
 
-/** Runs once per browser launch — waits for session restore, then locks or resumes. */
+/** Runs once per real browser launch or when resuming a locked session. */
 async function runBrowserStartupLock() {
   if (startupLockFlowRunning) return;
   startupLockFlowRunning = true;
@@ -740,16 +746,23 @@ async function runBrowserStartupLock() {
     const state = await getState();
     if (!state.isConfigured) return;
 
-    if (state.autoLockOnStartup) {
-      await setState({ lockOnNextOpen: false });
-      if (!state.isLocked) {
+    const session = await getSession();
+
+    if (session.pendingStartupLock) {
+      await setSession({ pendingStartupLock: false });
+      if (state.autoLockOnStartup && !state.isLocked) {
         const res = await lockBrowser();
         if (!res.ok) await emergencyUnlockBrowser();
-      } else {
-        await resumeLockedSession();
-        if (!(await findLockPopup())) await emergencyUnlockBrowser();
+        else startEnforceAlarm();
+        return;
       }
-      startEnforceAlarm();
+    }
+
+    if (state.lockOnNextOpen && state.autoLockOnStartup && !state.isLocked) {
+      await setState({ lockOnNextOpen: false });
+      const res = await lockBrowser();
+      if (!res.ok) await emergencyUnlockBrowser();
+      else startEnforceAlarm();
       return;
     }
 
@@ -757,7 +770,10 @@ async function runBrowserStartupLock() {
       await resumeLockedSession();
       if (!(await findLockPopup())) await emergencyUnlockBrowser();
       startEnforceAlarm();
-    } else if (state.idleLockMinutes > 0) {
+      return;
+    }
+
+    if (state.idleLockMinutes > 0) {
       resetIdleAlarm(state.idleLockMinutes);
     }
   } finally {
@@ -876,7 +892,7 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === "update") {
     const state = await getState();
     if (state.idleLockMinutes === 0) {
-      await setState({ idleLockMinutes: 5 });
+      await setState({ idleLockMinutes: 10 });
     }
     if (state.isLocked && !(await findLockPopup())) {
       await emergencyUnlockBrowser();
@@ -886,7 +902,9 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  bootstrapServiceWorker().catch(() => {});
+  chrome.storage.session
+    .set({ pendingStartupLock: true })
+    .then(() => bootstrapServiceWorker().catch(() => {}));
 });
 
 function scheduleStartupLockRecovery() {
@@ -1091,9 +1109,13 @@ chrome.tabs.onRemoved.addListener((tabId) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const url = changeInfo.url || tab.url;
-  if (!isLockPageUrl(url)) return;
-
-  setTimeout(() => handleStrayLockTab(tab), 0);
+  if (isLockPageUrl(url)) {
+    setTimeout(() => handleStrayLockTab(tab), 0);
+    return;
+  }
+  if (changeInfo.status === "complete") {
+    noteBrowserActivity();
+  }
 });
 
 chrome.tabs.onCreated.addListener((tab) => {
@@ -1120,7 +1142,9 @@ if (chrome.webNavigation?.onCommitted) {
     if (details.frameId !== 0) return;
     if (isProtectedExtensionUrl(details.url)) {
       purgeUrlFromHistory(details.url);
+      return;
     }
+    noteBrowserActivity();
   });
 }
 

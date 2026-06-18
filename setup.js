@@ -28,7 +28,7 @@ async function loadSettings() {
   const state = await chrome.runtime.sendMessage({ type: "GET_STATE" });
   autoStartup.checked = state.autoLockOnStartup !== false;
   idleMinutes.value =
-    state.idleLockMinutes != null ? state.idleLockMinutes : 5;
+    state.idleLockMinutes != null ? state.idleLockMinutes : 10;
 
   if (state.isConfigured) {
     pinSectionFirst.hidden = true;

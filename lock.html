@@ -3,15 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Browser Secure — Locked</title>
+    <title>Locked</title>
     <link rel="stylesheet" href="lock.css" />
   </head>
   <body>
     <main class="screen">
       <div class="panel">
         <div class="icon" aria-hidden="true">🔒</div>
-        <h1>Locked</h1>
-        <p class="subtitle">Enter PIN</p>
+        <h1 class="brand">Browser Secure</h1>
+        <p class="subtitle">Enter your PIN to unlock</p>
         <form id="unlock-form">
           <input
             type="password"
@@ -26,6 +26,22 @@
           <p id="error" class="error" hidden>Wrong PIN</p>
           <button type="submit" class="btn">Unlock</button>
         </form>
+        <p class="forgot-row">
+          <button type="button" id="forgot-pin" class="forgot-link">Forgot PIN?</button>
+        </p>
+        <div id="forgot-panel" class="forgot-panel" hidden>
+          <p class="forgot-text">
+            Your PIN is stored only on this device and cannot be recovered. To regain
+            access, reset lock data and set a new PIN in Settings.
+          </p>
+          <button type="button" id="open-recovery" class="btn btn-secondary">
+            Open recovery guide
+          </button>
+          <button type="button" id="reset-lock" class="btn btn-danger">
+            Reset lock now
+          </button>
+          <button type="button" id="forgot-cancel" class="forgot-cancel">Cancel</button>
+        </div>
         <p class="note">Closing this window (✕) will quit Browser. Open Browser again to enter your PIN.</p>
         <p class="version" id="extension-version" aria-label="Extension version"></p>
       </div>
