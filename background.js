@@ -1,4 +1,4 @@
-importScripts("crypto.js");
+﻿importScripts("crypto.js");
 
 const LOCK_PAGE = () => chrome.runtime.getURL("lock.html");
 const SETUP_PAGE = () => chrome.runtime.getURL("setup.html");
@@ -10,7 +10,7 @@ const EXTENSION_ORIGIN = () => {
   }
 };
 
-/** Compact popup — fits PIN panel only */
+/** Compact popup ΓÇö fits PIN panel only */
 const LOCK_WIDTH = 288;
 const LOCK_HEIGHT = 388;
 const SIZE_TOLERANCE = 12;
@@ -25,10 +25,14 @@ const DEFAULTS = {
   isConfigured: false,
   autoLockOnStartup: true,
   idleLockMinutes: 10,
-  /** Set when all windows close — lock again on next open (Brave background process). */
+  /** Set when all windows close ΓÇö lock again on next open (Brave background process). */
   lockOnNextOpen: false,
-  /** Laptop shutdown / crash while locked — recover on next start instead of quitting. */
+  /** Laptop shutdown / crash while locked ΓÇö recover on next start instead of quitting. */
   recoveryLockPending: false,
+  /** Tab count before close — used only to know when Edge finished restoring. */
+  lastSessionTabCount: 0,
+  /** True after browser quit — survives service-worker restart (PIN on reopen). */
+  pendingColdStartLock: false,
 };
 
 const SESSION_DEFAULTS = {
@@ -41,29 +45,33 @@ const SESSION_DEFAULTS = {
   lockReady: false,
   lockPopupShownAt: null,
   lockUiDismissed: false,
-  /** True only after OS browser launch (onStartup) — not on service worker recycle. */
-  pendingStartupLock: false,
 };
 
 let preparingLock = false;
 let enforcing = false;
 let enforceTimer = null;
 let suppressEventsUntil = 0;
-/** User closed the lock popup (X) — close every window so the browser exits. */
+/** User closed the lock popup (X) ΓÇö close every window so the browser exits. */
 let closingBrowserFromLockDismiss = false;
 /** Ignore LOCK_QUIT while the extension closes the lock window itself. */
 let suppressLockQuitUntil = 0;
 /** Prevents IIFE + onStartup from both preparing lock at once. */
 let startupLockFlowRunning = false;
-/** Startup/crash recovery — never quit browser when popup vanishes during this window. */
+/** Startup/crash recovery ΓÇö never quit browser when popup vanishes during this window. */
 let coldBootRecoveryUntil = 0;
-/** Startup grace — never quit the whole browser during this window (stale session / races). */
+/** Startup grace ΓÇö never quit the whole browser during this window (stale session / races). */
 let browserLaunchTime = Date.now();
 
 const ENFORCE_DEBOUNCE_MS = 1000;
 /** Wait for Brave/Edge session restore before minimize + popup (avoids visible main window). */
-/** Brief pause so Brave can open its window before we hide tabs and show PIN. */
+/** Brief pause before startup lock so the browser can begin session restore. */
 const SESSION_RESTORE_WAIT_MS = 500;
+/** How long to wait for Edge/Chrome to finish restoring your last session. */
+const SESSION_RESTORE_MAX_MS = 25000;
+const SESSION_RESTORE_MIN_MS = 5000;
+
+let startupTabCaptureTimer = null;
+let sessionTabCountSaveTimer = null;
 /** Idle-alarm / enforce guard during cold start only. */
 const STARTUP_GRACE_MS = 15000;
 /** Lock popup must be visible this long before X counts as user quit. */
@@ -74,6 +82,102 @@ const STASH_MINIMIZE_MAX_ATTEMPTS = 8;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isHideableTab(tab) {
+  return Boolean(tab?.id && !isLockTab(tab));
+}
+
+async function countHideableTabs() {
+  const normalWins = await chrome.windows.getAll({ windowTypes: ["normal"] });
+  const normalIds = new Set(normalWins.map((w) => w.id));
+  const tabs = await chrome.tabs.query({});
+  return tabs.filter(
+    (t) => t.windowId != null && normalIds.has(t.windowId) && isHideableTab(t)
+  ).length;
+}
+async function waitForSessionRestore(maxMs = SESSION_RESTORE_MAX_MS) {
+  const state = await getState();
+  const expected = state.lastSessionTabCount || 0;
+
+  await sleep(SESSION_RESTORE_MIN_MS);
+
+  let lastCount = 0;
+  let stableRounds = 0;
+  const start = Date.now();
+
+  while (Date.now() - start < maxMs) {
+    const count = await countHideableTabs();
+    const elapsed = Date.now() - start;
+
+    if (expected > 0 && count >= expected) {
+      await sleep(1000);
+      return;
+    }
+
+    if (count > lastCount) {
+      lastCount = count;
+      stableRounds = 0;
+      await sleep(500);
+      continue;
+    }
+
+    if (count === lastCount) {
+      stableRounds += 1;
+    }
+
+    if (expected === 0) {
+      // Edge often shows 1 empty "New tab" first — do not lock on that alone.
+      if (count <= 1 && elapsed < maxMs * 0.9) {
+        await sleep(400);
+        continue;
+      }
+      if (stableRounds >= 12 && (count >= 2 || elapsed > maxMs * 0.75)) {
+        return;
+      }
+      if (stableRounds >= 30) return;
+    } else {
+      if (stableRounds >= 10 && count >= Math.max(1, Math.floor(expected * 0.85))) {
+        await sleep(800);
+        return;
+      }
+      if (stableRounds >= 25) return;
+    }
+
+    await sleep(350);
+  }
+}
+
+/** Remember how many tabs were open — used only to time the wait before hiding. */
+async function saveSessionTabCount() {
+  const state = await getState();
+  if (!state.isConfigured || state.isLocked) return;
+
+  const count = await countHideableTabs();
+  if (count === 0) return;
+
+  if (count >= (state.lastSessionTabCount || 0)) {
+    await setState({ lastSessionTabCount: count });
+  }
+}
+
+/** Save immediately when tab count grows (no debounce). */
+async function saveSessionTabCountIfHigher() {
+  const state = await getState();
+  if (!state.isConfigured || state.isLocked) return;
+
+  const count = await countHideableTabs();
+  if (count > (state.lastSessionTabCount || 0)) {
+    await setState({ lastSessionTabCount: count });
+  }
+}
+
+function scheduleSessionTabCountSave() {
+  if (sessionTabCountSaveTimer != null) clearTimeout(sessionTabCountSaveTimer);
+  sessionTabCountSaveTimer = setTimeout(() => {
+    sessionTabCountSaveTimer = null;
+    saveSessionTabCount().catch(() => {});
+  }, 800);
 }
 
 async function getState() {
@@ -136,6 +240,14 @@ async function validateAndRepairLockSession() {
   }
 }
 
+/** Remember to lock when the browser is closed or fully quit. */
+async function markLockRequiredOnNextOpen() {
+  const state = await getState();
+  if (!state.isConfigured || !state.autoLockOnStartup || state.isLocked) return;
+  await saveSessionTabCount();
+  await setState({ lockOnNextOpen: true, pendingColdStartLock: true });
+}
+
 /** Remember to lock when Brave reopens (background process keeps running). */
 async function noteAllWindowsClosed() {
   const state = await getState();
@@ -145,11 +257,11 @@ async function noteAllWindowsClosed() {
     windowTypes: ["normal", "popup"],
   });
   if (windows.length === 0) {
-    await setState({ lockOnNextOpen: true });
+    await markLockRequiredOnNextOpen();
   }
 }
 
-/** Lock when a new window opens after the user fully closed Brave. */
+/** Lock when a new window opens after the user fully closed the browser. */
 async function maybeAutoLockOnWindowOpen() {
   if (preparingLock || startupLockFlowRunning) return;
 
@@ -163,11 +275,12 @@ async function maybeAutoLockOnWindowOpen() {
     return;
   }
 
-  await setState({ lockOnNextOpen: false });
-  const res = await lockBrowser();
+  await setState({ lockOnNextOpen: false, pendingColdStartLock: false });
+  const res = await lockBrowser({ isStartupLock: true });
   if (res.ok) {
     startEnforceAlarm();
   } else {
+    await setState({ lockOnNextOpen: true, pendingColdStartLock: true });
     await emergencyUnlockBrowser();
   }
 }
@@ -193,15 +306,12 @@ async function bootstrapServiceWorker() {
 
   if (!state.isConfigured) return;
 
-  const sessionSnap = await getSession();
   const fresh = await getState();
 
-  const needsStartupFlow =
-    fresh.isLocked ||
-    sessionSnap.pendingStartupLock ||
-    fresh.lockOnNextOpen;
+  const needsStartupLock =
+    fresh.isLocked || fresh.pendingColdStartLock || fresh.lockOnNextOpen;
 
-  if (needsStartupFlow) {
+  if (needsStartupLock) {
     if (fresh.isLocked && !(await findLockPopup())) {
       await setSession({
         lockReady: false,
@@ -220,6 +330,7 @@ async function bootstrapServiceWorker() {
   if (fresh.idleLockMinutes > 0) {
     resetIdleAlarm(fresh.idleLockMinutes);
   }
+  scheduleSessionTabCountSave();
 }
 
 function isWithinStartupGrace() {
@@ -297,7 +408,7 @@ async function handleStrayLockTab(tab) {
     return;
   }
 
-  // Lock UI still starting — never delete the lock tab (was closing the whole browser).
+  // Lock UI still starting ΓÇö never delete the lock tab (was closing the whole browser).
   if (preparingLock || !session.lockReady) {
     const popup = await findLockPopup();
     if (popup?.tabId === tab.id) return;
@@ -425,7 +536,7 @@ async function getCenteredBounds() {
   return { left: 120, top: 120, width: LOCK_WIDTH, height: LOCK_HEIGHT };
 }
 
-/** Brave often restores the window after we minimize — retry until it sticks. */
+/** Brave often restores the window after we minimize ΓÇö retry until it sticks. */
 async function ensureStashMinimized(stashWindowId) {
   if (!stashWindowId) return false;
 
@@ -567,6 +678,77 @@ function scheduleEnforce() {
 
 async function hideAllTabsInWindow(windowId) {
   const tabs = await chrome.tabs.query({ windowId });
+  await stashHideTabs(tabs);
+}
+
+/** Hide every hideable tab; repeat until none left visible (startup). */
+async function hideAllTabsInBrowserThoroughly(rounds = 6) {
+  for (let i = 0; i < rounds; i++) {
+    await hideAllTabsInBrowser();
+    const visible = await getVisibleHideableTabs();
+    if (!visible.length) return;
+    await sleep(450);
+  }
+}
+
+/** Hide tabs in every normal window — tabs stay in place (no recreate, no close windows). */
+async function hideAllTabsInBrowser() {
+  const normalWins = await chrome.windows.getAll({ windowTypes: ["normal"] });
+  const normalIds = new Set(normalWins.map((w) => w.id));
+  const tabs = await chrome.tabs.query({});
+  const toHide = tabs.filter(
+    (t) => t.windowId != null && normalIds.has(t.windowId) && isHideableTab(t)
+  );
+  await stashHideTabs(toHide);
+
+  const stillVisible = await getVisibleHideableTabs();
+  if (stillVisible.length) await stashHideTabs(stillVisible);
+}
+
+async function getVisibleHideableTabs() {
+  const normalWins = await chrome.windows.getAll({ windowTypes: ["normal"] });
+  const normalIds = new Set(normalWins.map((w) => w.id));
+  const tabs = await chrome.tabs.query({});
+  const result = [];
+  for (const tab of tabs) {
+    if (!tab.id || tab.windowId == null || !normalIds.has(tab.windowId)) continue;
+    if (!isHideableTab(tab)) continue;
+    try {
+      const full = await chrome.tabs.get(tab.id);
+      if (!full.hidden) result.push(full);
+    } catch {
+      /* ignore */
+    }
+  }
+  return result;
+}
+
+async function minimizeAllNormalWindowsExcept(exceptIds = []) {
+  const except = new Set(exceptIds.filter((id) => id != null));
+  const wins = await chrome.windows.getAll({ windowTypes: ["normal"] });
+  for (const win of wins) {
+    if (!win.id || except.has(win.id) || win.state === "minimized") continue;
+    try {
+      await chrome.windows.update(win.id, { state: "minimized" });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function unminimizeAllNormalWindows() {
+  const wins = await chrome.windows.getAll({ windowTypes: ["normal"] });
+  for (const win of wins) {
+    if (!win.id || win.state !== "minimized") continue;
+    try {
+      await chrome.windows.update(win.id, { state: "normal" });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function stashHideTabs(tabs) {
   const hiddenTabIds = [];
   const needsGroup = [];
   const session = await getSession();
@@ -585,18 +767,27 @@ async function hideAllTabsInWindow(windowId) {
   if (needsGroup.length) {
     const groupId = await collapseTabsIntoLockGroup(needsGroup);
     if (groupId != null) collapsedGroupIds.push(groupId);
+    hiddenTabIds.push(...needsGroup);
   }
 
-  await setSession({
-    hiddenTabIds: [...new Set([...session.hiddenTabIds, ...hiddenTabIds])],
-    collapsedGroupIds,
-  });
+  if (hiddenTabIds.length) {
+    await setSession({
+      hiddenTabIds: [...new Set([...session.hiddenTabIds, ...hiddenTabIds])],
+      collapsedGroupIds,
+    });
+  }
 }
 
 async function showAllHiddenTabs() {
   const session = await getSession();
   for (const tabId of session.hiddenTabIds) {
     await showTabId(tabId);
+  }
+  const tabs = await chrome.tabs.query({});
+  for (const tab of tabs) {
+    if (tab.id && tab.hidden && !isLockTab(tab)) {
+      await showTabId(tab.id);
+    }
   }
   await ungroupAllCollapsed();
 }
@@ -616,7 +807,26 @@ async function closeOtherWindowsExcept(keepIds) {
   }
 }
 
-async function pickOrCreateStashWindow() {
+async function pickOrCreateStashWindow({ isStartupLock = false } = {}) {
+  const wins = await chrome.windows.getAll({ windowTypes: ["normal"] });
+
+  if (wins.length) {
+    let bestId = null;
+    let bestCount = -1;
+    for (const win of wins) {
+      if (!win.id) continue;
+      const tabs = await chrome.tabs.query({ windowId: win.id });
+      const count = tabs.filter((t) => !isLockTab(t)).length;
+      if (count > bestCount) {
+        bestCount = count;
+        bestId = win.id;
+      }
+    }
+    if (bestId != null) {
+      if (!isStartupLock || bestCount > 0) return bestId;
+    }
+  }
+
   const focused = await chrome.windows.getLastFocused({
     windowTypes: ["normal"],
   });
@@ -624,10 +834,11 @@ async function pickOrCreateStashWindow() {
     return focused.id;
   }
 
-  const wins = await chrome.windows.getAll({ windowTypes: ["normal"] });
   for (const win of wins) {
     if (win.id) return win.id;
   }
+
+  if (isStartupLock) return null;
 
   const created = await chrome.windows.create({
     url: "about:blank",
@@ -637,13 +848,89 @@ async function pickOrCreateStashWindow() {
   return created.id;
 }
 
+function clearStartupTabCaptureWatchdog() {
+  if (startupTabCaptureTimer != null) {
+    clearInterval(startupTabCaptureTimer);
+    startupTabCaptureTimer = null;
+  }
+}
+
+/** Edge may still be restoring tabs after startup lock — keep capturing them. */
+function scheduleStartupTabCaptureWatchdog(stashWindowId, popupId) {
+  clearStartupTabCaptureWatchdog();
+  const started = Date.now();
+  startupTabCaptureTimer = setInterval(async () => {
+    if (Date.now() - started > 30000) {
+      clearStartupTabCaptureWatchdog();
+      return;
+    }
+    const state = await getState();
+    if (!state.isLocked) {
+      clearStartupTabCaptureWatchdog();
+      return;
+    }
+    await hideAllTabsInBrowser();
+    await minimizeAllNormalWindowsExcept([stashWindowId, popupId]);
+    if (stashWindowId) await ensureStashMinimized(stashWindowId);
+  }, 1500);
+}
+
+/** While locked: hide any tab Edge restores into a normal window (never close the window). */
+async function hideRestoredTabsInWindow(windowId) {
+  const state = await getState();
+  if (!state.isLocked || !windowId) return;
+
+  const session = await getSession();
+  if (windowId === session.lockWindowId) return;
+
+  const tabs = await chrome.tabs.query({ windowId });
+  const hideable = tabs.filter((t) => isHideableTab(t));
+  if (!hideable.length) return;
+
+  await stashHideTabs(hideable);
+  try {
+    await chrome.windows.update(windowId, { state: "minimized" });
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Hide a single tab restored after lock — stays in its window. */
+async function hideRestoredTab(tab) {
+  if (!tab?.id || !isHideableTab(tab)) return;
+  const state = await getState();
+  if (!state.isLocked) return;
+
+  const session = await getSession();
+  if (!session.lockReady || tab.windowId === session.lockWindowId) return;
+
+  await stashHideTabs([tab]);
+  if (tab.windowId != null) {
+    try {
+      await chrome.windows.update(tab.windowId, { state: "minimized" });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 /** Minimized stash window (hidden tabs) + separate popup lock UI. */
-async function prepareLockWindow() {
+async function prepareLockWindow({ isStartupLock = false } = {}) {
   preparingLock = true;
   suppressEventsUntil = Date.now() + 3000;
 
   try {
-    const stashWindowId = await pickOrCreateStashWindow();
+    let stashWindowId = await pickOrCreateStashWindow({ isStartupLock });
+    if (stashWindowId == null && isStartupLock) {
+      for (let i = 0; i < 6; i++) {
+        await sleep(1000);
+        stashWindowId = await pickOrCreateStashWindow({ isStartupLock: true });
+        if (stashWindowId != null) break;
+      }
+    }
+    if (stashWindowId == null) {
+      stashWindowId = await pickOrCreateStashWindow({ isStartupLock: false });
+    }
     const stashWin = await chrome.windows.get(stashWindowId);
 
     await setSession({
@@ -657,6 +944,31 @@ async function prepareLockWindow() {
       },
       lockReady: false,
     });
+
+    if (isStartupLock) {
+      const popupId = await ensureLockPopup();
+      const afterPopup = await getSession();
+      if (!(await findLockPopup())) {
+        throw new Error("lock_popup_missing");
+      }
+
+      await setSession({
+        lockReady: true,
+        lockUiDismissed: false,
+        lockWindowId: popupId,
+        lockTabId: afterPopup.lockTabId,
+        lockPopupShownAt: null,
+      });
+
+      await waitForSessionRestore();
+      await hideAllTabsInBrowserThoroughly(8);
+      await ensureStashMinimized(stashWindowId);
+      await purgeExtensionPagesFromHistory();
+      scheduleStashMinimizeWatchdog(stashWindowId);
+      await minimizeAllNormalWindowsExcept([stashWindowId, popupId]);
+      scheduleStartupTabCaptureWatchdog(stashWindowId, popupId);
+      return popupId;
+    }
 
     await hideAllTabsInWindow(stashWindowId);
     await ensureStashMinimized(stashWindowId);
@@ -735,7 +1047,7 @@ async function resumeLockedSession() {
   scheduleEnforce();
 }
 
-/** Runs once per real browser launch or when resuming a locked session. */
+/** Runs once per browser launch ΓÇö waits for session restore, then locks or resumes. */
 async function runBrowserStartupLock() {
   if (startupLockFlowRunning) return;
   startupLockFlowRunning = true;
@@ -746,23 +1058,29 @@ async function runBrowserStartupLock() {
     const state = await getState();
     if (!state.isConfigured) return;
 
-    const session = await getSession();
+    const coldLaunch = state.pendingColdStartLock;
+    if (coldLaunch) await setState({ pendingColdStartLock: false });
 
-    if (session.pendingStartupLock) {
-      await setSession({ pendingStartupLock: false });
-      if (state.autoLockOnStartup && !state.isLocked) {
-        const res = await lockBrowser();
-        if (!res.ok) await emergencyUnlockBrowser();
-        else startEnforceAlarm();
+    if (state.autoLockOnStartup) {
+      const shouldLock =
+        state.isLocked || coldLaunch || state.lockOnNextOpen;
+      if (!shouldLock) {
+        if (state.idleLockMinutes > 0) resetIdleAlarm(state.idleLockMinutes);
         return;
       }
-    }
 
-    if (state.lockOnNextOpen && state.autoLockOnStartup && !state.isLocked) {
       await setState({ lockOnNextOpen: false });
-      const res = await lockBrowser();
-      if (!res.ok) await emergencyUnlockBrowser();
-      else startEnforceAlarm();
+      if (!state.isLocked) {
+        const res = await lockBrowser({ isStartupLock: true });
+        if (!res.ok) {
+          await markLockRequiredOnNextOpen();
+          await emergencyUnlockBrowser();
+        }
+      } else {
+        await resumeLockedSession();
+        if (!(await findLockPopup())) await emergencyUnlockBrowser();
+      }
+      startEnforceAlarm();
       return;
     }
 
@@ -770,10 +1088,7 @@ async function runBrowserStartupLock() {
       await resumeLockedSession();
       if (!(await findLockPopup())) await emergencyUnlockBrowser();
       startEnforceAlarm();
-      return;
-    }
-
-    if (state.idleLockMinutes > 0) {
+    } else if (state.idleLockMinutes > 0) {
       resetIdleAlarm(state.idleLockMinutes);
     }
   } finally {
@@ -781,7 +1096,7 @@ async function runBrowserStartupLock() {
   }
 }
 
-async function lockBrowser() {
+async function lockBrowser({ isStartupLock = false } = {}) {
   const state = await getState();
   if (!state.isConfigured) {
     chrome.runtime.openOptionsPage();
@@ -791,7 +1106,7 @@ async function lockBrowser() {
   await setState({ isLocked: true });
   await clearSession();
   try {
-    await prepareLockWindow();
+    await prepareLockWindow({ isStartupLock });
   } catch {
     await emergencyUnlockBrowser();
     return { ok: false, error: "lock_ui_failed" };
@@ -820,6 +1135,7 @@ async function unlockBrowser() {
   await closeLockPopupSafely(session);
 
   await showAllHiddenTabs();
+  await unminimizeAllNormalWindows();
 
   const restoreWindowId = session.stashWindowId || session.lockWindowId;
   if (restoreWindowId != null && session.savedWindowBounds) {
@@ -839,7 +1155,9 @@ async function unlockBrowser() {
   }
 
   await clearSession();
+  clearStartupTabCaptureWatchdog();
   resetIdleAlarm((await getState()).idleLockMinutes);
+  scheduleSessionTabCountSave();
   return { ok: true };
 }
 
@@ -902,10 +1220,31 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 });
 
 chrome.runtime.onStartup.addListener(() => {
-  chrome.storage.session
-    .set({ pendingStartupLock: true })
-    .then(() => bootstrapServiceWorker().catch(() => {}));
+  chrome.storage.local.set(
+    { pendingColdStartLock: true, lockOnNextOpen: true },
+    () => bootstrapServiceWorker().catch(() => {})
+  );
 });
+
+function getExtensionShortcutsUrl() {
+  try {
+    if (navigator.userAgent.includes("Edg/")) return "edge://extensions/shortcuts";
+    if (navigator.userAgent.includes("Brave")) return "brave://extensions/shortcuts";
+  } catch {
+    /* ignore */
+  }
+  return "chrome://extensions/shortcuts";
+}
+
+function getBrowserStartupSettingsUrl() {
+  try {
+    if (navigator.userAgent.includes("Edg/")) return "edge://settings/onStartup";
+    if (navigator.userAgent.includes("Brave")) return "brave://settings/onStartup";
+  } catch {
+    /* ignore */
+  }
+  return "chrome://settings/onStartup";
+}
 
 function scheduleStartupLockRecovery() {
   setTimeout(async () => {
@@ -928,31 +1267,27 @@ function scheduleStartupLockRecovery() {
 
 chrome.windows.onCreated.addListener((win) => {
   setTimeout(() => maybeAutoLockOnWindowOpen().catch(() => {}), 80);
-  setTimeout(async () => {
-    if (preparingLock || Date.now() < suppressEventsUntil) return;
-    const state = await getState();
-    if (!state.isLocked) return;
+  const tryAbsorb = (delayMs) => {
+    setTimeout(async () => {
+      if (preparingLock || Date.now() < suppressEventsUntil) return;
+      const state = await getState();
+      if (!state.isLocked || !win.id) return;
 
-    const session = await getSession();
-    if (win.id === session.lockWindowId || win.id === session.stashWindowId) return;
+      const session = await getSession();
+      if (win.id === session.lockWindowId || win.id === session.stashWindowId) return;
 
-    try {
-      const stashId = session.stashWindowId;
-      if (stashId) {
-        const tabs = await chrome.tabs.query({ windowId: win.id });
-        for (const tab of tabs) {
-          if (tab.id && !isLockTab(tab)) {
-            await chrome.tabs.move(tab.id, { windowId: stashId, index: -1 });
-            await hideTabId(tab.id);
-          }
-        }
-      }
-      await chrome.windows.remove(win.id);
-    } catch {
-      /* ignore */
-    }
-    scheduleEnforce();
-  }, 400);
+      const tabs = await chrome.tabs.query({ windowId: win.id });
+      if (!tabs.length) return;
+
+      await hideRestoredTabsInWindow(win.id);
+      scheduleEnforce();
+    }, delayMs);
+  };
+  tryAbsorb(400);
+  tryAbsorb(1200);
+  tryAbsorb(3000);
+  tryAbsorb(6000);
+  tryAbsorb(10000);
 });
 
 if (chrome.windows.onBoundsChanged) {
@@ -975,10 +1310,15 @@ function noteBrowserActivity() {
 
 chrome.tabs.onActivated.addListener(() => {
   noteBrowserActivity();
+  saveSessionTabCountIfHigher().catch(() => {});
 });
 
 chrome.windows.onFocusChanged.addListener((windowId) => {
-  if (windowId === chrome.windows.WINDOW_ID_NONE) return;
+  if (windowId === chrome.windows.WINDOW_ID_NONE) {
+    noteAllWindowsClosed().catch(() => {});
+    setTimeout(() => noteAllWindowsClosed(), 400);
+    return;
+  }
   noteBrowserActivity();
   setTimeout(async () => {
     if (preparingLock || Date.now() < suppressEventsUntil) return;
@@ -1021,7 +1361,7 @@ async function handleLockPopupClosedByUser() {
 
   const session = await getSession();
 
-  // Still setting up — ignore accidental teardown; recreate PIN if needed.
+  // Still setting up ΓÇö ignore accidental teardown; recreate PIN if needed.
   if (!session.lockReady || !session.lockPopupShownAt) {
     if (Date.now() < suppressLockQuitUntil) return;
     try {
@@ -1032,7 +1372,7 @@ async function handleLockPopupClosedByUser() {
     return;
   }
 
-  // PIN screen was visible and user closed the window (X) — quit Brave.
+  // PIN screen was visible and user closed the window (X) ΓÇö quit Brave.
   await closeBrowserOnLockDismiss();
 }
 
@@ -1052,6 +1392,7 @@ async function closeBrowserOnLockDismiss() {
   await setState({
     isLocked: false,
     lockOnNextOpen: state.autoLockOnStartup,
+    pendingColdStartLock: state.autoLockOnStartup,
   });
   await clearSession();
 
@@ -1079,6 +1420,7 @@ chrome.windows.onRemoved.addListener((windowId) => {
           await handleLockPopupClosedByUser();
         }
       } else {
+        await markLockRequiredOnNextOpen();
         await noteAllWindowsClosed();
       }
     }
@@ -1089,7 +1431,10 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   setTimeout(async () => {
     if (closingBrowserFromLockDismiss) return;
     const state = await getState();
-    if (!state.isLocked) return;
+    if (!state.isLocked) {
+      scheduleSessionTabCountSave();
+      return;
+    }
 
     const session = await getSession();
     if (session.lockTabId !== tabId) return;
@@ -1113,8 +1458,16 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     setTimeout(() => handleStrayLockTab(tab), 0);
     return;
   }
-  if (changeInfo.status === "complete") {
-    noteBrowserActivity();
+  if (changeInfo.status === "complete" || changeInfo.url) {
+    (async () => {
+      const state = await getState();
+      if (state.isLocked && isHideableTab(tab)) {
+        await hideRestoredTab(tab);
+      } else if (!state.isLocked) {
+        noteBrowserActivity();
+        scheduleSessionTabCountSave();
+      }
+    })().catch(() => {});
   }
 });
 
@@ -1122,6 +1475,13 @@ chrome.tabs.onCreated.addListener((tab) => {
   setTimeout(async () => {
     try {
       const fresh = tab.id ? await chrome.tabs.get(tab.id) : tab;
+      const state = await getState();
+      if (state.isLocked) {
+        await hideRestoredTab(fresh);
+      } else {
+        saveSessionTabCountIfHigher().catch(() => {});
+        scheduleSessionTabCountSave();
+      }
       await handleStrayLockTab(fresh);
     } catch {
       /* tab gone */
@@ -1270,6 +1630,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ ok: true });
         break;
       }
+      case "OPEN_SHORTCUTS_SETTINGS": {
+        const url = getExtensionShortcutsUrl();
+        try {
+          await chrome.tabs.create({ url, active: true });
+          sendResponse({ ok: true, url });
+        } catch {
+          sendResponse({ ok: false, error: "cannot_open", url });
+        }
+        break;
+      }
+      case "OPEN_SESSION_SETTINGS": {
+        const url = getBrowserStartupSettingsUrl();
+        try {
+          await chrome.tabs.create({ url, active: true });
+          sendResponse({ ok: true, url });
+        } catch {
+          sendResponse({ ok: false, error: "cannot_open", url });
+        }
+        break;
+      }
       case "RESET_LOCK_STATE": {
         await emergencyUnlockBrowser();
         sendResponse({ ok: true });
@@ -1296,8 +1676,14 @@ chrome.runtime.onSuspend.addListener(() => {
   getState().then((state) => {
     if (state.isLocked) {
       chrome.storage.local.set({ recoveryLockPending: true });
+    } else if (state.isConfigured && state.autoLockOnStartup) {
+      chrome.storage.local.set({
+        lockOnNextOpen: true,
+        pendingColdStartLock: true,
+      });
+      saveSessionTabCount().catch(() => {});
     }
   });
 });
 
-bootstrapServiceWorker().catch(() => {});
+setTimeout(() => bootstrapServiceWorker().catch(() => {}), 120);

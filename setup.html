@@ -49,6 +49,23 @@
         <button type="button" id="change-pin-btn" class="btn primary">Update PIN</button>
       </section>
 
+      <section class="card" id="session-restore-card">
+        <h2>Restore tabs after restart</h2>
+        <p class="hint">
+          Browser Secure <strong>hides</strong> your tabs when locked — it does not save URLs separately.
+          Your browser must reopen the same tabs first.
+        </p>
+        <p class="hint">
+          In startup settings, choose <strong>“Open tabs from the previous session”</strong>
+          (Edge) or <strong>“Continue where you left off”</strong> (Chrome/Brave).
+          Extensions cannot turn this on automatically — you enable it once in the browser.
+        </p>
+        <button type="button" id="open-session-settings" class="btn secondary">
+          Open browser startup settings
+        </button>
+        <p class="msg" id="session-settings-msg" hidden></p>
+      </section>
+
       <section class="card">
         <h2>Behavior</h2>
         <label class="check">
@@ -60,8 +77,10 @@
           <input type="number" id="idle-minutes" min="0" max="120" value="10" />
         </label>
         <p class="hint shortcut-hint">
-          Keyboard shortcut: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> to lock instantly
-          (change in <code>brave://extensions/shortcuts</code>).
+          Keyboard shortcut: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> to lock instantly.
+          <span class="hint-note">Edge uses <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>L</kbd> for “Paste and go” — that cannot be used for lock.</span>
+          Customize at
+          <button type="button" id="open-shortcuts-settings" class="btn linkish">extension shortcuts</button>.
         </p>
         <button type="button" id="save-settings" class="btn secondary">Save settings</button>
         <p class="msg" id="settings-msg" hidden>Saved.</p>

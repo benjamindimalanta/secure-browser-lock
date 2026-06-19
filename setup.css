@@ -160,6 +160,29 @@ input[type="number"] {
   margin-bottom: 0.35rem;
 }
 
+.hint-note {
+  display: block;
+  margin-top: 0.35rem;
+  color: #fbbf24;
+}
+
+.btn.linkish {
+  display: inline;
+  width: auto;
+  padding: 0;
+  margin: 0;
+  background: none;
+  color: #38bdf8;
+  font-weight: 500;
+  font-size: inherit;
+  text-decoration: underline;
+  vertical-align: baseline;
+}
+
+.btn.linkish:hover {
+  color: #7dd3fc;
+}
+
 .footer {
   font-size: 0.75rem;
   color: #64748b;

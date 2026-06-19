@@ -14,6 +14,9 @@ const idleMinutes = document.getElementById("idle-minutes");
 const saveSettingsBtn = document.getElementById("save-settings");
 const settingsMsg = document.getElementById("settings-msg");
 const versionEl = document.getElementById("extension-version");
+const openSessionSettingsBtn = document.getElementById("open-session-settings");
+const sessionSettingsMsg = document.getElementById("session-settings-msg");
+const openShortcutsSettingsBtn = document.getElementById("open-shortcuts-settings");
 
 const manifest = chrome.runtime.getManifest();
 if (versionEl && manifest?.version) {
@@ -65,10 +68,11 @@ savePinBtn.addEventListener("click", async () => {
 
   pinInput.value = "";
   pinConfirm.value = "";
-  pinError.textContent = "PIN saved. You can lock from the toolbar icon or Ctrl+Shift+L.";
+  pinError.textContent = "PIN saved. Enable “Open tabs from the previous session” in startup settings (button below).";
   pinError.style.color = "#4ade80";
   pinError.hidden = false;
   await loadSettings();
+  openSessionSettingsBtn?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 });
 
 changePinBtn.addEventListener("click", async () => {
@@ -136,6 +140,21 @@ saveSettingsBtn.addEventListener("click", async () => {
   setTimeout(() => {
     settingsMsg.hidden = true;
   }, 2000);
+});
+
+openSessionSettingsBtn?.addEventListener("click", async () => {
+  if (sessionSettingsMsg) sessionSettingsMsg.hidden = true;
+  const res = await chrome.runtime.sendMessage({ type: "OPEN_SESSION_SETTINGS" });
+  if (sessionSettingsMsg) {
+    sessionSettingsMsg.hidden = false;
+    sessionSettingsMsg.textContent = res?.ok
+      ? "Opened startup settings — select “Open tabs from the previous session”."
+      : "Could not open settings tab. Go to edge://settings/onStartup manually.";
+  }
+});
+
+openShortcutsSettingsBtn?.addEventListener("click", async () => {
+  await chrome.runtime.sendMessage({ type: "OPEN_SHORTCUTS_SETTINGS" });
 });
 
 loadSettings();

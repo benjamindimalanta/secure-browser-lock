@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Browser Secure",
   "short_name": "BrowserSec",
-  "version": "1.1.4",
+  "version": "1.2.3",
   "description": "PIN-lock your browser on startup, idle, or demand. Hides tabs until unlock. Data stays on your device.",
   "homepage_url": "https://secure.cubescenter.org",
   "content_security_policy": {
@@ -40,10 +40,10 @@
   "commands": {
     "lock-browser": {
       "suggested_key": {
-        "default": "Ctrl+Shift+L",
-        "mac": "Command+Shift+L"
+        "default": "Alt+Shift+L",
+        "mac": "Alt+Shift+L"
       },
-      "description": "Lock the browser"
+      "description": "Lock the browser instantly"
     }
   },
   "content_scripts": [

@@ -16,7 +16,7 @@
 | **Lock popup** | Compact PIN window (no address bar); tabs hidden in background |
 | **Auto-lock on open** | PIN required every time you open the browser (default: on) |
 | **Idle auto-lock** | Locks after **10 minutes** of no use (configurable; `0` = off) |
-| **Manual lock** | Lock anytime from the toolbar icon or **Ctrl+Shift+L** |
+| **Manual lock** | Lock anytime from the toolbar icon or **Alt+Shift+L** |
 | **Change PIN** | Update your PIN in Settings without reinstalling |
 | **Close (✕) quits browser** | Closing the PIN window exits Brave/Chrome/Edge; reopening asks for PIN again |
 | **History protection** | Lock pages removed from history (reduces Ctrl+Shift+T bypass) |
@@ -88,7 +88,7 @@ Requires **Manifest V3** support (Chromium 88+).
 ### Lock the browser
 
 - Click the **Browser Secure** toolbar icon → **Lock browser**, or
-- Press **Ctrl+Shift+L** (customize at `chrome://extensions/shortcuts`), or
+- Press **Alt+Shift+L** (Edge blocks Ctrl+Shift+L — customize at `edge://extensions/shortcuts`), or
 - Wait for **auto-lock** (on startup or after idle timeout).
 
 ### Change PIN
