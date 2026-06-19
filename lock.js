@@ -17,6 +17,17 @@ if (versionEl && manifest?.version) {
 
 chrome.runtime.sendMessage({ type: "LOCK_UI_READY" }).catch(() => {});
 
+/** Port disconnect tells the background the popup closed (most reliable on Edge). */
+try {
+  chrome.runtime.connect({ name: "lock-ui" });
+} catch {
+  /* ignore */
+}
+
+window.addEventListener("pagehide", () => {
+  chrome.runtime.sendMessage({ type: "LOCK_UI_USER_CLOSED" }).catch(() => {});
+});
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   errorEl.hidden = true;

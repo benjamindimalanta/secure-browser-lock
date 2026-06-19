@@ -2,9 +2,6 @@ const statusEl = document.getElementById("status");
 const unlockedPanel = document.getElementById("unlocked-panel");
 const lockedPanel = document.getElementById("locked-panel");
 const lockBtn = document.getElementById("lock-btn");
-const unlockForm = document.getElementById("unlock-form");
-const popupPin = document.getElementById("popup-pin");
-const popupError = document.getElementById("popup-error");
 const focusLockBtn = document.getElementById("focus-lock-btn");
 const settingsLink = document.getElementById("settings-link");
 
@@ -17,23 +14,6 @@ lockBtn.addEventListener("click", async () => {
   lockBtn.disabled = true;
   await chrome.runtime.sendMessage({ type: "LOCK" });
   window.close();
-});
-
-unlockForm.addEventListener("submit", async (e) => {
-  e.preventDefault();
-  popupError.hidden = true;
-  const pin = popupPin.value.trim();
-  if (!pin) return;
-
-  const res = await chrome.runtime.sendMessage({ type: "VERIFY_PIN", pin });
-  if (res?.ok) {
-    popupPin.value = "";
-    await refresh();
-  } else {
-    popupError.hidden = false;
-    popupPin.value = "";
-    popupPin.focus();
-  }
 });
 
 focusLockBtn.addEventListener("click", async () => {
@@ -60,7 +40,6 @@ async function refresh() {
     statusEl.className = "status locked";
     unlockedPanel.hidden = true;
     lockedPanel.hidden = false;
-    popupPin.focus();
   } else {
     statusEl.textContent = "Browser is unlocked";
     statusEl.className = "status unlocked";

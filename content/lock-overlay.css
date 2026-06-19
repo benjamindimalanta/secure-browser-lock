@@ -2,6 +2,8 @@
   position: fixed !important;
   inset: 0 !important;
   z-index: 2147483646 !important;
+  pointer-events: auto !important;
+  cursor: default !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;

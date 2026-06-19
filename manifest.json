@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Browser Secure",
   "short_name": "BrowserSec",
-  "version": "1.2.3",
+  "version": "1.3.1",
   "description": "PIN-lock your browser on startup, idle, or demand. Hides tabs until unlock. Data stays on your device.",
   "homepage_url": "https://secure.cubescenter.org",
   "content_security_policy": {
@@ -49,8 +49,8 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*", "file://*/*"],
-      "js": ["content/lock-overlay.js"],
-      "css": ["content/lock-overlay.css"],
+      "js": ["content/lock-shield.js"],
+      "css": ["content/lock-shield.css"],
       "run_at": "document_idle"
     }
   ]

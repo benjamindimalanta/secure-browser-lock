@@ -18,20 +18,8 @@
     </div>
 
     <div id="locked-panel" hidden>
-      <form id="unlock-form">
-        <input
-          type="password"
-          id="popup-pin"
-          inputmode="numeric"
-          maxlength="8"
-          placeholder="PIN"
-          autocomplete="off"
-          aria-label="PIN"
-        />
-        <p id="popup-error" class="popup-error" hidden>Incorrect PIN</p>
-        <button type="submit" class="btn primary">Unlock</button>
-      </form>
-      <button type="button" id="focus-lock-btn" class="btn linkish">Show lock screen</button>
+      <p class="locked-hint">Use the lock screen to enter your PIN.</p>
+      <button type="button" id="focus-lock-btn" class="btn primary">Show lock screen</button>
     </div>
 
     <a href="#" id="settings-link" class="link">Settings</a>

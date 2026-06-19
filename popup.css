@@ -88,6 +88,13 @@ body {
   text-decoration: underline;
 }
 
+.locked-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #94a3b8;
+  text-align: center;
+}
+
 #locked-panel form {
   display: flex;
   flex-direction: column;
