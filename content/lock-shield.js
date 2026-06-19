@@ -1,6 +1,8 @@
 (function () {
   const ROOT_ID = "secure-browser-lock-shield";
 
+  if (!chrome?.runtime?.onMessage) return;
+
   function showShield() {
     if (document.getElementById(ROOT_ID)) return;
 
@@ -29,6 +31,7 @@
   }
 
   async function syncLockState() {
+    if (!chrome?.runtime?.sendMessage) return;
     try {
       const res = await chrome.runtime.sendMessage({ type: "IS_LOCKED" });
       if (res?.isLocked) showShield();

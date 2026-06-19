@@ -11,7 +11,8 @@
       <div class="panel">
         <div class="icon" aria-hidden="true">🔒</div>
         <h1 class="brand">Browser Secure</h1>
-        <p class="subtitle">Enter your PIN to unlock</p>
+        <p class="subtitle" id="lock-subtitle">Enter your PIN to unlock</p>
+
         <form id="unlock-form">
           <input
             type="password"
@@ -26,23 +27,46 @@
           <p id="error" class="error" hidden>Wrong PIN</p>
           <button type="submit" class="btn">Unlock</button>
         </form>
-        <p class="forgot-row">
+
+        <p class="forgot-row" id="forgot-row">
           <button type="button" id="forgot-pin" class="forgot-link">Forgot PIN?</button>
         </p>
+
         <div id="forgot-panel" class="forgot-panel" hidden>
+          <p class="forgot-lead">PIN cannot be recovered</p>
           <p class="forgot-text">
-            Your PIN is stored only on this device and cannot be recovered. To regain
-            access, reset lock data and set a new PIN in Settings.
+            Reset lock data on this device, then set a new PIN in Settings.
           </p>
-          <button type="button" id="open-recovery" class="btn btn-secondary">
-            Open recovery guide
-          </button>
-          <button type="button" id="reset-lock" class="btn btn-danger">
+          <button type="button" id="reset-lock" class="btn-forgot-reset">
             Reset lock now
           </button>
-          <button type="button" id="forgot-cancel" class="forgot-cancel">Cancel</button>
+          <button type="button" id="open-recovery" class="forgot-recovery-link">
+            Open recovery guide
+          </button>
+          <button type="button" id="forgot-cancel" class="forgot-cancel">
+            ← Back to unlock
+          </button>
         </div>
-        <p class="note">Closing this window (✕) will quit Browser. Open Browser again to enter your PIN.</p>
+
+        <div id="reset-confirm-panel" class="forgot-panel confirm-panel" hidden>
+          <p class="forgot-lead">Reset lock?</p>
+          <p class="forgot-text">
+            Your saved PIN will be cleared. Settings will open so you can choose a new
+            PIN.
+          </p>
+          <div class="confirm-actions">
+            <button type="button" id="reset-confirm-yes" class="btn-forgot-reset">
+              Yes, reset lock
+            </button>
+            <button type="button" id="reset-confirm-no" class="btn-ghost">
+              Cancel
+            </button>
+          </div>
+        </div>
+
+        <p class="note" id="lock-note">
+          Closing this window (✕) will quit Browser. Open Browser again to enter your PIN.
+        </p>
         <p class="version" id="extension-version" aria-label="Extension version"></p>
       </div>
     </main>
